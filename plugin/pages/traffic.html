@@ -205,7 +205,7 @@
     </div>
 
     <div class="notice">
-      <strong>统计口径：</strong>当前展示采集器上报的 AnyTLS 节点。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
+      <strong>统计口径：</strong>当前接入 <span id="scopeNodes">采集器上报的 AnyTLS 节点</span>。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
     </div>
     <div class="error" id="errorBanner" role="alert"></div>
 
@@ -319,7 +319,7 @@
     };
 
     const el = Object.fromEntries([
-      "refreshButton", "refreshState", "errorBanner", "rangeButtons", "nodePicker",
+      "refreshButton", "refreshState", "errorBanner", "rangeButtons", "nodePicker", "scopeNodes",
       "nodeSelect", "totalValue", "totalDetail", "uploadValue", "uploadDetail",
       "downloadValue", "downloadDetail", "deviceValue", "deviceDetail",
       "onlineValue", "onlineDetail",
@@ -460,7 +460,20 @@
       });
     }
 
+    function renderScope() {
+      const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
+      if (!nodes.length) {
+        el.scopeNodes.textContent = "暂无采集节点";
+        el.scopeNodes.title = "";
+        return;
+      }
+      const visible = nodes.slice(0, 3).map((node) => node.node_name);
+      el.scopeNodes.textContent = visible.join("、") + (nodes.length > visible.length ? " 等 " + nodes.length + " 个节点" : "");
+      el.scopeNodes.title = nodes.map((node) => node.node_name).join("\n");
+    }
+
     function renderSummary() {
+      renderScope();
       const node = selectedNode();
       if (!node) {
         el.totalValue.textContent = "—";
