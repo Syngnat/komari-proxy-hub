@@ -60,6 +60,11 @@
     }
     input[type="checkbox"] { width: auto; accent-color: var(--accent); }
     .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; }
+    details.advanced {
+      margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    }
+    details.advanced summary { cursor: pointer; color: var(--text); font-size: 13px; font-weight: 650; }
+    details.advanced .grid { margin-top: 14px; }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     button {
       border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px;
@@ -107,7 +112,14 @@
         </div>
         <div class="field">
           <label for="sni">Reality SNI / 握手域名</label>
-          <input id="sni" value="www.microsoft.com">
+          <input id="sni" list="sniPresets" value="www.microsoft.com" placeholder="选择预设或输入域名">
+          <datalist id="sniPresets">
+            <option value="www.microsoft.com">
+            <option value="www.apple.com">
+            <option value="www.cloudflare.com">
+            <option value="www.bing.com">
+            <option value="www.amazon.com">
+          </datalist>
         </div>
         <div class="field">
           <label for="service">sing-box 服务名</label>
@@ -121,6 +133,38 @@
           <label for="serverHost">分享链接中的服务器地址（留空自动用节点 IP）</label>
           <input id="serverHost" placeholder="203.0.113.10 或 node.example.com">
         </div>
+        <details class="advanced">
+          <summary>高级设置</summary>
+          <div class="grid">
+            <div class="field">
+              <label for="listen">监听地址</label>
+              <input id="listen" value="::" placeholder=":: 或 0.0.0.0">
+            </div>
+            <div class="field">
+              <label for="handshakePort">Reality 握手端口</label>
+              <input id="handshakePort" type="number" min="1" max="65535" value="443">
+            </div>
+            <div class="field">
+              <label for="userName">用户名称</label>
+              <input id="userName" value="default" maxlength="80">
+            </div>
+            <div class="field">
+              <label for="flow">VLESS Flow</label>
+              <select id="flow">
+                <option value="xtls-rprx-vision">xtls-rprx-vision</option>
+                <option value="">不启用 Flow</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="clashController">Clash API 监听地址</label>
+              <input id="clashController" value="127.0.0.1:9090">
+            </div>
+            <div class="field">
+              <label for="clashSecretPath">Clash API secret 文件路径</label>
+              <input id="clashSecretPath" value="/etc/proxy-traffic/clash-api-secret">
+            </div>
+          </div>
+        </details>
         <div class="field full">
           <label class="check"><input id="install" type="checkbox"> 节点未安装 sing-box 时，先执行官方安装脚本（会修改系统）</label>
           <label class="check"><input id="confirm" type="checkbox"> 我确认修改该节点的 sing-box 配置并重启服务</label>
@@ -129,6 +173,7 @@
 
       <div class="actions">
         <button id="refreshClients" type="button">刷新节点列表</button>
+        <button id="recommend" type="button">一键填充推荐配置</button>
         <button id="preview" type="button" class="primary">生成部署脚本</button>
         <button id="apply" type="button" class="primary" disabled>执行部署</button>
       </div>
@@ -142,7 +187,8 @@
   <script>
     const el = Object.fromEntries([
       "clientSelect", "tag", "port", "sni", "service", "configPath", "serverHost",
-      "install", "confirm", "refreshClients", "preview", "apply", "status", "previewBox", "result",
+      "listen", "handshakePort", "userName", "flow", "clashController", "clashSecretPath",
+      "install", "confirm", "refreshClients", "recommend", "preview", "apply", "status", "previewBox", "result",
     ].map((id) => [id, document.getElementById(id)]));
 
     let clients = [];
@@ -178,10 +224,38 @@
           option.textContent = client.name + (client.ipv4 ? " · " + client.ipv4 : "") + (client.os ? " · " + client.os : "");
           el.clientSelect.appendChild(option);
         });
+        if (clients.length && !el.serverHost.value) {
+          const first = clients[0];
+          el.serverHost.value = first.ipv4 || first.ipv6 || "";
+        }
         setStatus(clients.length ? "已读取 " + clients.length + " 个节点" : "Komari 没有可用节点", clients.length ? "ok" : "error");
       } catch (error) {
         setStatus("读取节点失败：" + error.message, "error");
       }
+    }
+
+    function applyRecommended() {
+      if (!clients.length) {
+        setStatus("没有可用节点", "error");
+        return;
+      }
+      if (!el.clientSelect.value) el.clientSelect.selectedIndex = 0;
+      const client = selectedClient();
+      el.tag.value = "vless-reality";
+      el.port.value = "443";
+      el.sni.value = "www.microsoft.com";
+      el.service.value = "sing-box";
+      el.configPath.value = "/etc/sing-box/config.json";
+      el.listen.value = "::";
+      el.handshakePort.value = "443";
+      el.userName.value = "default";
+      el.flow.value = "xtls-rprx-vision";
+      el.clashController.value = "127.0.0.1:9090";
+      el.clashSecretPath.value = "/etc/proxy-traffic/clash-api-secret";
+      el.serverHost.value = client && (client.ipv4 || client.ipv6) || "";
+      el.install.checked = false;
+      invalidatePreview();
+      setStatus("已填充推荐配置，只需确认节点和端口后生成部署脚本。", "ok");
     }
 
     function getParams() {
@@ -197,12 +271,25 @@
       if (!/^[A-Za-z0-9_.@-]{1,80}$/.test(service)) throw new Error("服务名格式不正确");
       const configPath = el.configPath.value.trim();
       if (!configPath.startsWith("/")) throw new Error("配置文件必须是绝对路径");
+      const listen = el.listen.value.trim();
+      if (!listen) throw new Error("监听地址不能为空");
+      const handshakePort = Number(el.handshakePort.value);
+      if (!Number.isInteger(handshakePort) || handshakePort < 1 || handshakePort > 65535) throw new Error("Reality 握手端口必须在 1-65535");
+      const userName = el.userName.value.trim();
+      if (!userName || userName.length > 80) throw new Error("用户名称不能为空且不能超过 80 字符");
+      const flow = el.flow.value;
+      const clashController = el.clashController.value.trim();
+      if (!/^[^\s:]+:\d{1,5}$/.test(clashController)) throw new Error("Clash API 监听地址格式应为 host:port");
+      const clashSecretPath = el.clashSecretPath.value.trim();
+      if (!clashSecretPath.startsWith("/")) throw new Error("Clash API secret 必须是绝对路径");
       return {
         client_uuid: client.uuid,
         client_name: client.name,
         client_ipv4: client.ipv4 || "",
         client_ipv6: client.ipv6 || "",
         tag, port, sni, service, config_path: configPath,
+        listen, handshake_port: handshakePort, user_name: userName, flow,
+        clash_controller: clashController, clash_secret_path: clashSecretPath,
         server_host: el.serverHost.value.trim(),
         install: el.install.checked,
       };
@@ -287,15 +374,15 @@ if any(isinstance(item, dict) and item.get("tag") == params["tag"] for item in i
 inbounds.append({
     "type": "vless",
     "tag": params["tag"],
-    "listen": "::",
+    "listen": params["listen"],
     "listen_port": int(params["port"]),
-    "users": [{"name": "default", "uuid": uuid, "flow": "xtls-rprx-vision"}],
+    "users": [{"name": params["user_name"], "uuid": uuid, "flow": params["flow"]}],
     "tls": {
         "enabled": True,
         "server_name": params["sni"],
         "reality": {
             "enabled": True,
-            "handshake": {"server": params["sni"], "server_port": 443},
+            "handshake": {"server": params["sni"], "server_port": int(params["handshake_port"])},
             "private_key": private_key,
             "short_id": [short_id],
         },
@@ -314,7 +401,7 @@ if not isinstance(experimental, dict):
 clash_api = experimental.setdefault("clash_api", {})
 if not isinstance(clash_api, dict):
     fail("现有配置的 experimental.clash_api 不是对象")
-clash_api.setdefault("external_controller", "127.0.0.1:9090")
+clash_api.setdefault("external_controller", params["clash_controller"])
 clash_secret = str(clash_api.get("secret") or secrets.token_urlsafe(32))
 clash_api["secret"] = clash_secret
 
@@ -324,7 +411,7 @@ temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", en
 os.chmod(temporary, 0o600)
 os.replace(temporary, config_path)
 
-secret_path = pathlib.Path("/etc/proxy-traffic/clash-api-secret")
+secret_path = pathlib.Path(params["clash_secret_path"])
 secret_path.parent.mkdir(parents=True, exist_ok=True)
 secret_path.write_text(clash_secret + "\n", encoding="utf-8")
 os.chmod(secret_path, 0o640)
@@ -470,7 +557,14 @@ print(json.dumps({
     }
 
     el.refreshClients.addEventListener("click", loadClients);
-    [el.clientSelect, el.tag, el.port, el.sni, el.service, el.configPath, el.serverHost, el.install].forEach((control) => {
+    el.clientSelect.addEventListener("change", () => {
+      const client = selectedClient();
+      if (client) el.serverHost.value = client.ipv4 || client.ipv6 || "";
+    });
+    el.recommend.addEventListener("click", applyRecommended);
+    [el.clientSelect, el.tag, el.port, el.sni, el.service, el.configPath, el.serverHost,
+      el.listen, el.handshakePort, el.userName, el.flow, el.clashController, el.clashSecretPath,
+      el.install].forEach((control) => {
       control.addEventListener("change", invalidatePreview);
       control.addEventListener("input", invalidatePreview);
     });
