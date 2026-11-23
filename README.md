@@ -197,10 +197,12 @@ sudo journalctl -u proxy-traffic-collector -f
 在 Komari 管理后台的插件市场中添加自定义源：
 
 ```text
-https://raw.githubusercontent.com/Syngnat/komari-proxy-traffic/main/v1.json
+https://cdn.jsdelivr.net/gh/Syngnat/komari-proxy-traffic@main/v1.json
 ```
 
 刷新市场目录后选择“代理流量排行”，点击安装。Komari 会从本仓库的 GitHub Release 下载 ZIP，校验 SHA-256 后解压到插件目录。
+
+使用 jsDelivr 而不是 `raw.githubusercontent.com` 的 `main` 地址，是为了避开 GitHub Raw 的 CDN 缓存，发布新版本后市场能更快读到清单。
 
 市场清单文件为 [`v1.json`](v1.json)，安装包为对应版本的 Release 资源。
 
