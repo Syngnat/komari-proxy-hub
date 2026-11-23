@@ -151,6 +151,30 @@
     .node-specific { display: block; }
     .node-specific.hidden, [data-node-types].hidden, [data-group-types].hidden { display: none; }
     select[multiple] { min-height: 132px; }
+    .member-picker {
+      max-height: 240px; overflow: auto; padding: 4px;
+      border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+    }
+    button.member-option {
+      display: flex; width: 100%; align-items: center; gap: 9px;
+      padding: 8px 10px; border: 0; border-radius: 7px;
+      background: transparent; text-align: left;
+    }
+    button.member-option:hover { background: var(--soft); }
+    button.member-option.selected {
+      color: var(--ok); background: rgba(19, 138, 114, .1); font-weight: 650;
+    }
+    button.member-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .member-check {
+      display: inline-flex; width: 18px; height: 18px; flex: 0 0 18px;
+      align-items: center; justify-content: center;
+      border: 1px solid var(--line); border-radius: 50%;
+      color: transparent; font-size: 12px; font-weight: 800;
+    }
+    button.member-option.selected .member-check {
+      border-color: var(--ok); background: var(--ok); color: #fff;
+    }
+    .member-name { min-width: 0; overflow-wrap: anywhere; }
     .rule-form .field { gap: 4px; }
     .rule-table-wrap { margin-top: 12px; max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
     .rule-tree {
@@ -500,8 +524,10 @@
                   </select>
                 </div>
                 <div class="field full">
-                  <label for="groupProxies">成员（节点或已有分组，可多选）</label>
-                  <select id="groupProxies" multiple></select>
+                  <label id="groupProxiesLabel">成员（节点或已有分组，可多选）</label>
+                  <div id="groupProxyPicker" class="member-picker" role="listbox"
+                    aria-labelledby="groupProxiesLabel" aria-multiselectable="true"></div>
+                  <select id="groupProxies" multiple hidden></select>
                 </div>
                 <div class="field" data-group-types="url-test,fallback,load-balance">
                   <label for="groupUrl">测速 URL（url-test/fallback）</label>
@@ -619,8 +645,10 @@
         </select>
       </div>
       <div class="field full">
-        <label for="quickGroupProxies">成员（节点或已有分组，可多选）</label>
-        <select id="quickGroupProxies" multiple></select>
+        <label id="quickGroupProxiesLabel">成员（节点或已有分组，可多选）</label>
+        <div id="quickGroupProxyPicker" class="member-picker" role="listbox"
+          aria-labelledby="quickGroupProxiesLabel" aria-multiselectable="true"></div>
+        <select id="quickGroupProxies" multiple hidden></select>
       </div>
       <details id="quickGroupAdvanced" class="quick-group-advanced" hidden>
         <summary>高级设置：测速参数</summary>
@@ -662,7 +690,8 @@
       "newGroupFromRule", "openRuleDialog", "ruleDialog", "ruleDialogTitle",
       "ruleDialogStatus", "closeRuleDialog",
       "quickGroupDialog", "quickGroupStatus", "quickGroupForm", "quickGroupName",
-      "quickGroupType", "quickGroupProxies", "quickGroupAdvanced", "quickGroupUrl",
+      "quickGroupType", "quickGroupProxies", "quickGroupProxyPicker",
+      "quickGroupAdvanced", "quickGroupUrl",
       "quickGroupInterval", "quickGroupTolerance", "quickSaveGroup",
       "quickCancelGroup", "quickCloseGroupDialog",
       "ruleOptions", "applyRule", "cancelRule", "ruleRows", "parseRaw",
@@ -673,7 +702,7 @@
       "nodeAlpn", "nodeDialer", "nodeSkipCert", "nodeUdp", "saveNode",
       "cancelNode", "nodeRows",
       "groupSummary", "addGroup", "groupForm", "groupName", "groupType",
-      "groupProxies", "groupUrl", "groupInterval", "groupTolerance",
+      "groupProxies", "groupProxyPicker", "groupUrl", "groupInterval", "groupTolerance",
       "saveGroup", "cancelGroup", "groupRows",
       "yamlEditor", "yamlHighlight", "saveRules", "reloadFile",
       "editorStatus", "editorResult",
@@ -1545,6 +1574,48 @@
       const wanted = new Set(Array.isArray(selected) ? selected : []);
       Array.from(select.options).forEach((option) => {
         option.selected = wanted.has(option.value);
+      });
+      const picker = select === el.groupProxies
+        ? el.groupProxyPicker
+        : (select === el.quickGroupProxies ? el.quickGroupProxyPicker : null);
+      if (picker) renderMemberPicker(picker, select);
+    }
+
+    function renderMemberPicker(picker, select) {
+      picker.replaceChildren();
+      const options = Array.from(select.options).map((option, index) => ({
+        option,
+        index,
+      }));
+      options.sort((left, right) => {
+        const selectedDelta = Number(right.option.selected) - Number(left.option.selected);
+        return selectedDelta || left.index - right.index;
+      });
+      options.forEach(({option}) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "member-option" + (option.selected ? " selected" : "");
+        item.dataset.value = option.value;
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-selected", option.selected ? "true" : "false");
+        item.title = option.value;
+        const check = document.createElement("span");
+        check.className = "member-check";
+        check.textContent = "✓";
+        const name = document.createElement("span");
+        name.className = "member-name";
+        name.textContent = option.value;
+        item.append(check, name);
+        item.addEventListener("click", () => {
+          option.selected = !option.selected;
+          renderMemberPicker(picker, select);
+          requestAnimationFrame(() => {
+            const focused = Array.from(picker.children)
+              .find((node) => node.dataset.value === option.value);
+            if (focused) focused.focus();
+          });
+        });
+        picker.appendChild(item);
       });
     }
 
