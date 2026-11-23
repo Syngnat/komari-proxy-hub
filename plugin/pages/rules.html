@@ -106,7 +106,39 @@
       padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
     }
     .rule-filters .field { min-width: 170px; flex: 1; }
-    .rule-form { display: grid; grid-template-columns: 150px minmax(160px, 1fr) minmax(160px, 1fr) 150px auto; gap: 8px; align-items: end; margin-top: 10px; }
+    .rule-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+    .rule-form .field.full, .rule-form .actions { grid-column: 1 / -1; }
+    .rule-form .actions { justify-content: flex-end; margin-top: 4px; }
+    .rule-dialog {
+      width: min(720px, calc(100vw - 28px)); max-height: calc(100vh - 28px);
+      overflow: auto;
+      padding: 0; border: 1px solid var(--line); border-radius: 16px;
+      color: var(--text); background: var(--panel);
+      box-shadow: 0 24px 80px rgba(10, 20, 30, .28);
+    }
+    .rule-dialog::backdrop { background: rgba(10, 20, 30, .45); }
+    .rule-dialog-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; padding: 20px 20px 0;
+    }
+    .rule-dialog-head h2 { margin: 0; font-size: 20px; }
+    .rule-dialog-close {
+      width: 34px; height: 34px; flex: 0 0 34px; padding: 0;
+      font-size: 22px; line-height: 1;
+    }
+    .rule-dialog.has-subdialog .rule-dialog-close { visibility: hidden; }
+    .rule-dialog .rule-form { padding: 16px 20px 20px; }
+    .rule-dialog .rule-form-help { margin: 0 20px 12px; }
+    .rule-dialog .status { margin: 0 20px 12px; }
+    .quick-group-dialog { width: min(560px, calc(100vw - 28px)); }
+    .quick-group-advanced {
+      grid-column: 1 / -1; padding: 0 12px 12px;
+      border: 1px solid var(--line); border-radius: 10px;
+    }
+    .quick-group-advanced > summary {
+      padding: 10px 0; color: var(--muted); font-size: 12px; cursor: pointer;
+    }
+    .quick-group-advanced .grid { margin-top: 8px; }
     .form-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
     .form-panel .grid { margin-top: 0; }
     .form-panel .field { min-width: 0; }
@@ -201,7 +233,11 @@
     @media (max-width: 950px) {
       body { padding: 14px; }
       .workspace, .grid { grid-template-columns: 1fr; }
-      .rule-form { grid-template-columns: 1fr 1fr; }
+      .rule-form { grid-template-columns: 1fr; }
+      .rule-form .field.full, .rule-form .actions { grid-column: auto; }
+      .quick-group-advanced { grid-column: auto; }
+      .rule-dialog .rule-form .actions { justify-content: stretch; }
+      .rule-dialog .rule-form .actions button { flex: 1; }
       .rule-form .field-actions { flex-wrap: wrap; }
       .rule-form .field-actions select { flex-basis: 100%; }
       .rule-type-body { padding-left: 14px; }
@@ -300,6 +336,7 @@
                 <button id="expandRuleTypes" class="small" type="button">展开全部</button>
                 <button id="collapseRuleTypes" class="small" type="button">收起全部</button>
                 <button id="refreshFile" class="small" type="button">重新读取文件</button>
+                <button id="openRuleDialog" class="primary" type="button">＋ 新增规则</button>
               </div>
             </div>
             <div class="rule-filters">
@@ -312,34 +349,6 @@
                 <select id="filterTarget"><option value="">全部</option></select>
               </div>
               <button id="clearFilters" type="button">清除筛选</button>
-            </div>
-            <div class="rule-form" id="ruleForm">
-              <div class="field">
-                <label for="ruleType">新增规则类型</label>
-                <select id="ruleType"></select>
-              </div>
-              <div class="field">
-                <label for="ruleValue">匹配内容</label>
-                <input id="ruleValue" placeholder="example.com / acl_openai / CN">
-              </div>
-              <div class="field">
-                <label for="ruleTarget">目标策略组</label>
-                <div class="field-actions">
-                  <select id="ruleTarget"></select>
-                  <button id="newGroupFromRule" type="button">＋ 新建分组</button>
-                </div>
-              </div>
-              <div class="field">
-                <label for="ruleOptions">选项（通常留空）</label>
-                <input id="ruleOptions" placeholder="no-resolve">
-              </div>
-              <div class="actions" style="margin:0">
-                <button id="applyRule" class="primary" type="button">添加规则</button>
-                <button id="cancelRule" type="button" hidden>取消</button>
-              </div>
-            </div>
-            <div class="hint rule-form-help">
-              <code>no-resolve</code> 只用于 IP-CIDR、IP-CIDR6、GEOIP、IP-ASN 等 IP 类规则：不把域名解析成 IP，避免 DNS 泄漏和额外延迟；普通域名规则留空即可。
             </div>
             <div id="ruleRows" class="rule-tree"></div>
           </div>
@@ -546,6 +555,97 @@
     </section>
   </main>
 
+  <dialog id="ruleDialog" class="rule-dialog" aria-labelledby="ruleDialogTitle">
+    <div class="rule-dialog-head">
+      <div>
+        <h2 id="ruleDialogTitle">新增规则</h2>
+        <div class="hint">修改规则的匹配条件、目标策略组和附加选项。</div>
+      </div>
+      <button id="closeRuleDialog" class="rule-dialog-close" type="button" aria-label="关闭">×</button>
+    </div>
+    <div id="ruleDialogStatus" class="status"></div>
+    <div class="rule-form" id="ruleForm">
+      <div class="field">
+        <label for="ruleType">规则类型</label>
+        <select id="ruleType"></select>
+      </div>
+      <div class="field">
+        <label for="ruleValue">匹配内容</label>
+        <input id="ruleValue" placeholder="example.com / acl_openai / CN">
+      </div>
+      <div class="field full">
+        <label for="ruleTarget">目标策略组</label>
+        <div class="field-actions">
+          <select id="ruleTarget"></select>
+          <button id="newGroupFromRule" type="button">＋ 新建分组</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="ruleOptions">选项（通常留空）</label>
+        <input id="ruleOptions" placeholder="no-resolve">
+      </div>
+      <div class="actions">
+        <button id="cancelRule" type="button">取消</button>
+        <button id="applyRule" class="primary" type="button">添加规则</button>
+      </div>
+    </div>
+    <div class="hint rule-form-help">
+      <code>no-resolve</code> 只用于 IP-CIDR、IP-CIDR6、GEOIP、IP-ASN 等 IP 类规则：不把域名解析成 IP，避免 DNS 泄漏和额外延迟；普通域名规则留空即可。
+    </div>
+  </dialog>
+
+  <dialog id="quickGroupDialog" class="rule-dialog quick-group-dialog" aria-labelledby="quickGroupDialogTitle">
+    <div class="rule-dialog-head">
+      <div>
+        <h2 id="quickGroupDialogTitle">新建分组</h2>
+        <div class="hint">保存后会自动选中该分组，当前规则内容不会丢失。</div>
+      </div>
+      <button id="quickCloseGroupDialog" class="rule-dialog-close" type="button" aria-label="关闭">×</button>
+    </div>
+    <div id="quickGroupStatus" class="status"></div>
+    <div id="quickGroupForm" class="rule-form">
+      <div class="field">
+        <label for="quickGroupName">分组名称</label>
+        <input id="quickGroupName" placeholder="例如：🚀 节点选择">
+      </div>
+      <div class="field">
+        <label for="quickGroupType">分组类型</label>
+        <select id="quickGroupType">
+          <option value="select">select</option>
+          <option value="url-test">url-test</option>
+          <option value="fallback">fallback</option>
+          <option value="load-balance">load-balance</option>
+          <option value="relay">relay</option>
+        </select>
+      </div>
+      <div class="field full">
+        <label for="quickGroupProxies">成员（节点或已有分组，可多选）</label>
+        <select id="quickGroupProxies" multiple></select>
+      </div>
+      <details id="quickGroupAdvanced" class="quick-group-advanced" hidden>
+        <summary>高级设置：测速参数</summary>
+        <div class="grid">
+          <div class="field" data-quick-group-types="url-test,fallback,load-balance">
+            <label for="quickGroupUrl">测速 URL</label>
+            <input id="quickGroupUrl" placeholder="https://www.gstatic.com/generate_204">
+          </div>
+          <div class="field" data-quick-group-types="url-test,fallback,load-balance">
+            <label for="quickGroupInterval">间隔秒数</label>
+            <input id="quickGroupInterval" type="number" min="1" value="300">
+          </div>
+          <div class="field" data-quick-group-types="url-test,fallback">
+            <label for="quickGroupTolerance">容差毫秒</label>
+            <input id="quickGroupTolerance" type="number" min="0" value="50">
+          </div>
+        </div>
+      </details>
+      <div class="actions">
+        <button id="quickCancelGroup" type="button">取消</button>
+        <button id="quickSaveGroup" class="primary" type="button">保存并选中</button>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     const el = Object.fromEntries([
       "rootPath", "refreshRules", "ruleStatus", "rulesDirs", "rulesGlob",
@@ -559,7 +659,12 @@
       "refreshFile", "expandRuleTypes", "collapseRuleTypes",
       "filterType", "filterTarget", "clearFilters",
       "ruleForm", "ruleType", "ruleValue", "ruleTarget",
-      "newGroupFromRule",
+      "newGroupFromRule", "openRuleDialog", "ruleDialog", "ruleDialogTitle",
+      "ruleDialogStatus", "closeRuleDialog",
+      "quickGroupDialog", "quickGroupStatus", "quickGroupForm", "quickGroupName",
+      "quickGroupType", "quickGroupProxies", "quickGroupAdvanced", "quickGroupUrl",
+      "quickGroupInterval", "quickGroupTolerance", "quickSaveGroup",
+      "quickCancelGroup", "quickCloseGroupDialog",
       "ruleOptions", "applyRule", "cancelRule", "ruleRows", "parseRaw",
       "nodeSummary", "addNode", "nodeForm", "nodeName", "nodeType", "nodeServer",
       "nodePort", "nodeUuid", "nodePassword", "nodeNetwork", "nodeSecurity",
@@ -595,7 +700,6 @@
     let editingIndex = -1;
     let editingNodeIndex = -1;
     let editingGroupIndex = -1;
-    let pendingGroupTarget = "";
     let rawDirty = false;
     let activeTab = "visual";
     let visibleRuleCount = 0;
@@ -1418,8 +1522,7 @@
       el.nodeSummary.textContent = proxies.length + " 个节点";
     }
 
-    function renderGroupProxyOptions(selected, currentName) {
-      el.groupProxies.replaceChildren();
+    function groupProxyNames(currentName) {
       const names = proxies.map((proxy) => String(proxy.name || "")).filter(Boolean);
       proxyGroups.forEach((group) => {
         const name = String(group.name || "");
@@ -1428,16 +1531,25 @@
       specialTargets
         .filter((name) => name !== "PASS")
         .forEach((name) => names.push(name));
-      [...new Set(names)].forEach((name) => {
+      return [...new Set(names)];
+    }
+
+    function renderGroupProxyOptionsInto(select, selected, currentName) {
+      select.replaceChildren();
+      groupProxyNames(currentName).forEach((name) => {
         const option = document.createElement("option");
         option.value = name;
         option.textContent = name;
-        el.groupProxies.appendChild(option);
+        select.appendChild(option);
       });
       const wanted = new Set(Array.isArray(selected) ? selected : []);
-      Array.from(el.groupProxies.options).forEach((option) => {
+      Array.from(select.options).forEach((option) => {
         option.selected = wanted.has(option.value);
       });
+    }
+
+    function renderGroupProxyOptions(selected, currentName) {
+      renderGroupProxyOptionsInto(el.groupProxies, selected, currentName);
     }
 
     function syncGroupFieldVisibility() {
@@ -1446,6 +1558,18 @@
         const types = String(field.getAttribute("data-group-types") || "").split(",");
         field.classList.toggle("hidden", !types.includes(type));
       });
+    }
+
+    function syncQuickGroupFieldVisibility() {
+      const type = el.quickGroupType.value;
+      const wasHidden = el.quickGroupAdvanced.hidden;
+      el.quickGroupForm.querySelectorAll("[data-quick-group-types]").forEach((field) => {
+        const types = String(field.getAttribute("data-quick-group-types") || "").split(",");
+        field.classList.toggle("hidden", !types.includes(type));
+      });
+      el.quickGroupAdvanced.hidden = !["url-test", "fallback", "load-balance"].includes(type);
+      if (el.quickGroupAdvanced.hidden) el.quickGroupAdvanced.open = false;
+      else if (wasHidden) el.quickGroupAdvanced.open = true;
     }
 
     function resetGroupForm() {
@@ -1458,6 +1582,70 @@
       el.groupTolerance.value = "50";
       renderGroupProxyOptions([], "");
       syncGroupFieldVisibility();
+    }
+
+    function resetQuickGroupForm() {
+      el.quickGroupName.value = "";
+      el.quickGroupType.value = "select";
+      el.quickGroupUrl.value = "";
+      el.quickGroupInterval.value = "300";
+      el.quickGroupTolerance.value = "50";
+      renderGroupProxyOptionsInto(el.quickGroupProxies, [], "");
+      el.quickGroupAdvanced.open = false;
+      syncQuickGroupFieldVisibility();
+      setStatus("", "", el.quickGroupStatus);
+    }
+
+    function openQuickGroupDialog() {
+      resetQuickGroupForm();
+      if (!el.quickGroupDialog.open) el.quickGroupDialog.showModal();
+      el.ruleDialog.classList.add("has-subdialog");
+      requestAnimationFrame(() => el.quickGroupName.focus());
+    }
+
+    function closeQuickGroupDialog() {
+      if (el.quickGroupDialog.open) el.quickGroupDialog.close();
+      el.ruleDialog.classList.remove("has-subdialog");
+      requestAnimationFrame(() => el.ruleTarget.focus());
+    }
+
+    function saveQuickGroupForm() {
+      if (!structuredEditingSupported) {
+        setStatus("请先同步更新 proxy-traffic server。", "error", el.quickGroupStatus);
+        return;
+      }
+      const name = el.quickGroupName.value.trim();
+      const type = el.quickGroupType.value;
+      const members = Array.from(el.quickGroupProxies.selectedOptions).map((option) => option.value);
+      if (!name) {
+        setStatus("分组名称不能为空。", "error", el.quickGroupStatus);
+        return;
+      }
+      if (proxyGroups.some((group) => String(group && group.name || "").trim() === name)) {
+        setStatus("分组名称“" + name + "”已存在，请换一个名称。", "error", el.quickGroupStatus);
+        return;
+      }
+      if (!members.length) {
+        setStatus("分组至少选择一个节点或子分组。", "error", el.quickGroupStatus);
+        return;
+      }
+      const group = {name, type, proxies: members};
+      if (["url-test", "fallback", "load-balance"].includes(type)) {
+        group.url = el.quickGroupUrl.value.trim() || "https://www.gstatic.com/generate_204";
+        group.interval = Number(el.quickGroupInterval.value) || 300;
+      }
+      if (type === "url-test" || type === "fallback") {
+        group.tolerance = Number(el.quickGroupTolerance.value) || 50;
+      }
+      proxyGroups.push(group);
+      groups = proxyGroups.map((item) => String(item.name || "")).filter(Boolean);
+      syncYamlSections(["proxy-groups"]);
+      renderGroups();
+      renderNodes();
+      renderRules();
+      renderTargetSelect(name);
+      closeQuickGroupDialog();
+      setStatus("分组“" + name + "”已添加，尚未保存到文件。", "ok", el.ruleDialogStatus);
     }
 
     function startGroupForm(index) {
@@ -1532,13 +1720,7 @@
       renderRules();
       const nextTarget = renamed && previousTarget === oldName ? name : previousTarget;
       renderTargetSelect(groups.includes(nextTarget) ? nextTarget : (groups[0] || "DIRECT"));
-      const addedName = name;
       resetGroupForm();
-      if (pendingGroupTarget) {
-        pendingGroupTarget = "";
-        switchTab("visual");
-        el.ruleTarget.value = addedName;
-      }
       setStatus("分组已保存，尚未保存到文件。", "ok", el.editorStatus);
     }
 
@@ -1756,6 +1938,26 @@
       renderRules();
     }
 
+    function showRuleDialog() {
+      setStatus("", "", el.ruleDialogStatus);
+      if (!el.ruleDialog.open) el.ruleDialog.showModal();
+      requestAnimationFrame(() => {
+        const target = el.ruleValue.disabled ? el.ruleTarget : el.ruleValue;
+        target.focus();
+      });
+    }
+
+    function closeRuleDialog() {
+      if (el.ruleDialog.open) el.ruleDialog.close();
+      resetRuleForm();
+    }
+
+    function openNewRuleDialog() {
+      resetRuleForm();
+      el.ruleDialogTitle.textContent = "新增规则";
+      showRuleDialog();
+    }
+
     function editRule(index) {
       editingIndex = index;
       const parts = parseRule(rules[index]);
@@ -1769,10 +1971,10 @@
       el.ruleValue.value = parts.value;
       el.ruleOptions.value = parts.options.join(",");
       renderTargetSelect(parts.target);
+      el.ruleDialogTitle.textContent = "编辑规则";
       el.applyRule.textContent = "保存修改";
-      el.cancelRule.hidden = false;
       el.ruleValue.disabled = parts.type === "MATCH" || parts.type === "FINAL";
-      el.ruleType.focus();
+      showRuleDialog();
     }
 
     function resetRuleForm() {
@@ -1782,7 +1984,6 @@
       el.ruleOptions.value = "";
       renderTargetSelect(groups[0] || "DIRECT");
       el.applyRule.textContent = "添加规则";
-      el.cancelRule.hidden = true;
       el.ruleValue.disabled = false;
     }
 
@@ -1792,11 +1993,11 @@
       const target = el.ruleTarget.value;
       const options = el.ruleOptions.value.split(",").map((item) => item.trim()).filter(Boolean);
       if (!target) {
-        setStatus("目标策略组不能为空。", "error", el.editorStatus);
+        setStatus("目标策略组不能为空。", "error", el.ruleDialogStatus);
         return;
       }
       if (type !== "MATCH" && type !== "FINAL" && !value) {
-        setStatus("匹配内容不能为空。", "error", el.editorStatus);
+        setStatus("匹配内容不能为空。", "error", el.ruleDialogStatus);
         return;
       }
       const rule = buildRule({ type, value, target, options });
@@ -1815,7 +2016,7 @@
       expandedRuleGroups.add(ruleGroupKey(type, target));
       syncRawFromRules();
       renderRules();
-      resetRuleForm();
+      closeRuleDialog();
       setStatus("规则已加入，尚未保存。", "ok", el.editorStatus);
     }
 
@@ -2146,6 +2347,22 @@
       expandedRuleGroups.clear();
       renderRules();
     });
+    el.openRuleDialog.addEventListener("click", openNewRuleDialog);
+    el.closeRuleDialog.addEventListener("click", closeRuleDialog);
+    el.ruleDialog.addEventListener("click", (event) => {
+      if (event.target === el.ruleDialog) closeRuleDialog();
+    });
+    el.quickGroupDialog.addEventListener("click", (event) => {
+      if (event.target === el.quickGroupDialog) closeQuickGroupDialog();
+    });
+    el.quickGroupDialog.addEventListener("close", () => {
+      el.ruleDialog.classList.remove("has-subdialog");
+      requestAnimationFrame(() => el.ruleTarget.focus());
+    });
+    el.quickGroupType.addEventListener("change", syncQuickGroupFieldVisibility);
+    el.quickSaveGroup.addEventListener("click", saveQuickGroupForm);
+    el.quickCancelGroup.addEventListener("click", closeQuickGroupDialog);
+    el.quickCloseGroupDialog.addEventListener("click", closeQuickGroupDialog);
     el.tabVisual.addEventListener("click", () => switchTab("visual"));
     el.tabNodes.addEventListener("click", () => switchTab("nodes"));
     el.tabGroups.addEventListener("click", () => switchTab("groups"));
@@ -2158,11 +2375,7 @@
     el.saveGroup.addEventListener("click", saveGroupForm);
     el.cancelGroup.addEventListener("click", resetGroupForm);
     el.groupType.addEventListener("change", syncGroupFieldVisibility);
-    el.newGroupFromRule.addEventListener("click", async () => {
-      pendingGroupTarget = "rule";
-      await switchTab("groups");
-      startGroupForm(-1);
-    });
+    el.newGroupFromRule.addEventListener("click", openQuickGroupDialog);
     el.filterType.addEventListener("change", applyRuleFilters);
     el.filterTarget.addEventListener("change", applyRuleFilters);
     el.clearFilters.addEventListener("click", () => {
@@ -2174,7 +2387,7 @@
       el.ruleValue.disabled = el.ruleType.value === "MATCH" || el.ruleType.value === "FINAL";
     });
     el.applyRule.addEventListener("click", submitRule);
-    el.cancelRule.addEventListener("click", resetRuleForm);
+    el.cancelRule.addEventListener("click", closeRuleDialog);
     el.parseRaw.addEventListener("click", async () => {
       try { await parseRaw(); } catch (error) {
         setStatus(error.message, "error", el.editorStatus);
