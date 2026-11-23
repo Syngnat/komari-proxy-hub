@@ -9,7 +9,7 @@
     "en": "Aggregates proxy traffic by source IP, with exact Clash API statistics, Xray access-log fallback, and a built-in sing-box VLESS Reality provisioning wizard."
   },
   "author": "Syngnat",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",

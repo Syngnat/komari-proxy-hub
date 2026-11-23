@@ -12,12 +12,12 @@
         "zh_CN": "按来源 IP 汇总代理流量，支持 Clash API 完整统计、Xray access log 降级统计，以及 sing-box VLESS Reality 节点创建向导。",
         "en": "Proxy traffic ranking by source IP, with exact Clash API statistics, Xray access-log fallback, and a sing-box VLESS Reality provisioning wizard."
       },
-      "version": "2.1.0",
+      "version": "2.1.1",
       "author": "Syngnat",
       "komari": ">=1.6.0",
       "url": "https://github.com/Syngnat/komari-proxy-traffic",
-      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v2.1.0/komari-proxy-traffic-v2.1.0.zip",
-      "sha256": "21911ec16d57e3339c22a6177e0addce285a75fb85a1ebaaa8f198df6cde5fca"
+      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v2.1.1/komari-proxy-traffic-v2.1.1.zip",
+      "sha256": "f880ba1073de948492f53dd5ceb1ac485604a561ed0f84e66d14cfc4475f2404"
     }
   ]
 }

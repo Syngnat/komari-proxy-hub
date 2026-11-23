@@ -173,7 +173,7 @@
 
       <div class="actions">
         <button id="refreshClients" type="button">刷新节点列表</button>
-        <button id="recommend" type="button">一键填充推荐配置</button>
+        <button id="recommend" type="button">一键填充并生成</button>
         <button id="preview" type="button" class="primary">生成部署脚本</button>
         <button id="apply" type="button" class="primary" disabled>执行部署</button>
       </div>
@@ -255,7 +255,12 @@
       el.serverHost.value = client && (client.ipv4 || client.ipv6) || "";
       el.install.checked = false;
       invalidatePreview();
-      setStatus("已填充推荐配置，只需确认节点和端口后生成部署脚本。", "ok");
+      try {
+        buildCommand();
+        setStatus("已填充推荐配置并生成部署脚本，确认节点和端口后勾选确认即可执行。", "ok");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
     }
 
     function getParams() {
