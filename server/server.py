@@ -349,6 +349,8 @@ GEO_CITY_READER = None
 GEO_ASN_READER = None
 GEO_CITY_FALLBACK_READER = None
 GEO_LOCK = threading.Lock()
+RULE_CACHE: dict[str, dict] = {}
+RULE_CACHE_LOCK = threading.Lock()
 IPINFO_ATTEMPTED: set[str] = set()
 IPINFO_LOCK = threading.Lock()
 
@@ -2854,7 +2856,38 @@ def save_rule_config(payload: object) -> dict:
     return rule_config()
 
 
-def _rule_metadata(path: Path, content: str, public_base: str) -> dict:
+def _load_rule_content(path: Path) -> tuple[str, dict | None]:
+    stat = path.stat()
+    key = str(path.resolve())
+    with RULE_CACHE_LOCK:
+        entry = RULE_CACHE.get(key)
+        if (
+            entry and
+            entry.get('mtime_ns') == stat.st_mtime_ns and
+            entry.get('size') == stat.st_size
+        ):
+            return entry['content'], entry.get('document')
+    content = path.read_text(encoding='utf-8')
+    try:
+        document = _rule_document(content)
+    except ValueError:
+        document = None
+    with RULE_CACHE_LOCK:
+        RULE_CACHE[key] = {
+            'mtime_ns': stat.st_mtime_ns,
+            'size': stat.st_size,
+            'content': content,
+            'document': document,
+        }
+    return content, document
+
+
+def _rule_metadata(
+    path: Path,
+    content: str,
+    public_base: str,
+    document: dict | None = None,
+) -> dict:
     stat = path.stat()
     token = path.parent.name
     metadata = {
@@ -2882,11 +2915,12 @@ def _rule_metadata(path: Path, content: str, public_base: str) -> dict:
         'provider_names': [],
         'rule_types': {},
     }
-    try:
-        document = _rule_document(content)
-    except ValueError as exc:
-        metadata['yaml_error'] = str(exc)
-        return metadata
+    if document is None:
+        try:
+            document = _rule_document(content)
+        except ValueError as exc:
+            metadata['yaml_error'] = str(exc)
+            return metadata
     proxies = document.get('proxies')
     proxy_count = len(proxies) if isinstance(proxies, list) else 0
     groups = _rule_groups(document)
@@ -2942,8 +2976,8 @@ def discover_rule_files() -> dict:
                 if stat.st_size > 4 * 1024 * 1024:
                     errors.append({'path': str(path), 'error': '文件超过 4 MiB'})
                     continue
-                content = path.read_text(encoding='utf-8')
-                files.append(_rule_metadata(path, content, public_base))
+                content, document = _load_rule_content(path)
+                files.append(_rule_metadata(path, content, public_base, document))
             except (OSError, UnicodeDecodeError) as exc:
                 errors.append({'path': str(path), 'error': str(exc)})
     files.sort(
@@ -2980,7 +3014,7 @@ def read_rule_file(file_id: str) -> dict:
     metadata = _rule_file_metadata(file_id)
     path = Path(metadata['path'])
     try:
-        content = path.read_text(encoding='utf-8')
+        content, document = _load_rule_content(path)
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError('读取规则文件失败: ' + str(exc)) from exc
     result = {
@@ -2992,10 +3026,8 @@ def read_rule_file(file_id: str) -> dict:
         'providers': [],
         'proxy_count': 0,
     }
-    try:
-        document = _rule_document(content)
-    except ValueError as exc:
-        result['yaml_error'] = str(exc)
+    if document is None:
+        result['yaml_error'] = 'YAML 解析失败'
         return result
     result.update({
         'mode': str(document.get('mode') or ''),
@@ -3037,7 +3069,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.6'
+    server_version = 'ProxyTrafficAggregate/2.2.7'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:

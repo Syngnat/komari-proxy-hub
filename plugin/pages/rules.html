@@ -329,6 +329,7 @@
     let rawDirty = false;
     let activeTab = "visual";
     let visibleRuleCount = 0;
+    const fileCache = new Map();
 
     function setStatus(message, kind, target) {
       const node = target || el.ruleStatus;
@@ -616,6 +617,7 @@
     function renderRules() {
       renderFilterSelects();
       el.ruleRows.replaceChildren();
+      const fragment = document.createDocumentFragment();
       visibleRuleCount = 0;
       rules.forEach((rule, index) => {
         const parts = parseRule(rule);
@@ -652,8 +654,9 @@
         remove.addEventListener("click", () => deleteRule(index));
         action.append(up, down, edit, remove);
         row.append(number, type, value, target, options, action);
-        el.ruleRows.appendChild(row);
+        fragment.appendChild(row);
       });
+      el.ruleRows.appendChild(fragment);
       updateSummary();
     }
 
@@ -819,43 +822,82 @@
       });
     }
 
-    async function openFile(fileId) {
+    async function applyFilePayload(payload) {
+      currentFile = payload.file;
+      const fileIndex = state.files.findIndex((item) => item.id === currentFile.id);
+      if (fileIndex >= 0) {
+        state.files[fileIndex] = currentFile;
+      }
+      content = payload.content || "";
+      rules = Array.isArray(payload.rules) ? payload.rules : [];
+      groups = Array.isArray(payload.groups) ? payload.groups : [];
+      providers = Array.isArray(payload.providers) ? payload.providers : [];
+      rawDirty = false;
+      el.editorArea.hidden = false;
+      el.yamlEditor.value = content;
+      refreshHighlight();
+      renderRules();
+      renderRuleTypeSelect();
+      renderTargetSelect(groups[0] || "DIRECT");
+      resetRuleForm();
+      updateSummary();
+      renderFileList();
+      el.editorResult.hidden = true;
+      if (payload.yaml_error) {
+        await switchTab("raw");
+        setStatus("YAML 解析失败，已切到源码模式：" + payload.yaml_error, "error", el.editorStatus);
+      } else {
+        await switchTab("visual");
+        setStatus("已读取 " + currentFile.label + "，共 " + rules.length + " 条规则。", "ok");
+      }
+      return payload;
+    }
+
+    async function openFile(fileId, force) {
+      const meta = state.files.find((item) => item.id === fileId);
+      const cached = fileCache.get(fileId);
+      if (
+        !force &&
+        cached &&
+        meta &&
+        cached.file &&
+        cached.file.sha256 === meta.sha256 &&
+        cached.file.mtime_ms === meta.mtime_ms
+      ) {
+        return applyFilePayload(cached);
+      }
       setStatus("正在读取规则文件…");
       try {
         const payload = await api(
           "/api/proxy-traffic/rules/file?file_id=" + encodeURIComponent(fileId)
         );
-        currentFile = payload.file;
-        const fileIndex = state.files.findIndex((item) => item.id === fileId);
-        if (fileIndex >= 0) {
-          state.files[fileIndex] = currentFile;
-        }
-        content = payload.content || "";
-        rules = Array.isArray(payload.rules) ? payload.rules : [];
-        groups = Array.isArray(payload.groups) ? payload.groups : [];
-        providers = Array.isArray(payload.providers) ? payload.providers : [];
-        rawDirty = false;
-        el.editorArea.hidden = false;
-        el.yamlEditor.value = content;
-        refreshHighlight();
-        renderRules();
-        renderRuleTypeSelect();
-        renderTargetSelect(groups[0] || "DIRECT");
-        resetRuleForm();
-        updateSummary();
-        renderFileList();
-        el.editorResult.hidden = true;
-        if (payload.yaml_error) {
-          await switchTab("raw");
-          setStatus("YAML 解析失败，已切到源码模式：" + payload.yaml_error, "error", el.editorStatus);
-        } else {
-          await switchTab("visual");
-          setStatus("已读取 " + currentFile.label + "，共 " + rules.length + " 条规则。", "ok");
-        }
-        return payload;
+        fileCache.set(fileId, payload);
+        return await applyFilePayload(payload);
       } catch (error) {
         setStatus("读取规则文件失败：" + error.message, "error");
         return null;
+      }
+    }
+
+    async function prefetchFile(fileId) {
+      const meta = state.files.find((item) => item.id === fileId);
+      const cached = fileCache.get(fileId);
+      if (
+        cached &&
+        meta &&
+        cached.file &&
+        cached.file.sha256 === meta.sha256 &&
+        cached.file.mtime_ms === meta.mtime_ms
+      ) {
+        return;
+      }
+      try {
+        const payload = await api(
+          "/api/proxy-traffic/rules/file?file_id=" + encodeURIComponent(fileId)
+        );
+        fileCache.set(fileId, payload);
+      } catch (_) {
+        // The visible file remains usable even if a background prefetch fails.
       }
     }
 
@@ -883,6 +925,7 @@
           if (opened && !opened.yaml_error) {
             setStatus("已识别 " + state.files.length + " 个规则文件。", "ok");
           }
+          state.files.slice(1, 10).forEach((file) => prefetchFile(file.id));
         } else {
           setStatus(payload.error || "没有识别到 /var/www/premium/*/mihomo.yaml。", "error");
         }
@@ -1000,7 +1043,7 @@
         const output = await pollTask(payload.task_id);
         el.editorResult.hidden = false;
         el.editorResult.textContent = output || "保存完成";
-        await openFile(currentFile.id);
+        await openFile(currentFile.id, true);
         setStatus("规则已保存，订阅文件已更新。", "ok", el.editorStatus);
       } catch (error) {
         setStatus("保存失败：" + error.message, "error", el.editorStatus);
@@ -1012,7 +1055,7 @@
     el.refreshRules.addEventListener("click", loadState);
     el.saveRuleConfig.addEventListener("click", saveRuleConfig);
     el.refreshFile.addEventListener("click", () => {
-      if (currentFile) openFile(currentFile.id);
+      if (currentFile) openFile(currentFile.id, true);
     });
     el.tabVisual.addEventListener("click", () => switchTab("visual"));
     el.tabRaw.addEventListener("click", () => switchTab("raw"));
@@ -1052,7 +1095,7 @@
       }
     });
     el.reloadFile.addEventListener("click", () => {
-      if (currentFile) openFile(currentFile.id);
+      if (currentFile) openFile(currentFile.id, true);
     });
     el.saveRules.addEventListener("click", saveRules);
 

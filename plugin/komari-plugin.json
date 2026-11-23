@@ -9,7 +9,7 @@
     "en": "Aggregates proxy traffic by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual YAML rule editor."
   },
   "author": "Syngnat",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",
