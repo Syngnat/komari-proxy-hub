@@ -1,0 +1,28 @@
+[Unit]
+Description=Komari proxy traffic aggregate and query API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxy-traffic
+Group=proxy-traffic
+Environment=PYTHONUNBUFFERED=1
+Environment=PROXY_TRAFFIC_DB=/var/lib/proxy-traffic/aggregate.db
+Environment=PROXY_TRAFFIC_TOKEN_FILE=/etc/proxy-traffic/ingest-token
+Environment=PROXY_TRAFFIC_BIND=172.17.0.1
+Environment=PROXY_TRAFFIC_PORT=9460
+ExecStart=/opt/proxy-traffic/venv/bin/python /opt/proxy-traffic/server.py
+Restart=always
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/proxy-traffic /etc/proxy-traffic
+ReadWritePaths=/var/lib/proxy-traffic
+UMask=0077
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

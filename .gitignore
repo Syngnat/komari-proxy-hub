@@ -1,0 +1,11 @@
+*.db
+*.db-*
+*.mmdb
+*.log
+__pycache__/
+*.pyc
+config.json
+.env
+.DS_Store
+venv/
+.venv/

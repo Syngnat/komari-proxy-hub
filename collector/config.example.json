@@ -1,0 +1,9 @@
+{
+  "clash_api": "http://127.0.0.1:9090",
+  "clash_secret_file": "/etc/proxy-traffic/clash-secret",
+  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
+  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "node_id": "lax-01",
+  "node_name": "LAX-01",
+  "db_path": "/var/lib/proxy-traffic/traffic.db"
+}

@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>代理流量排行</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f7;
+      --panel: rgba(255, 255, 255, .94);
+      --panel-solid: #fff;
+      --text: #16202b;
+      --muted: #687786;
+      --line: rgba(20, 35, 50, .1);
+      --line-strong: rgba(20, 35, 50, .18);
+      --accent: #2867e8;
+      --accent-soft: rgba(40, 103, 232, .1);
+      --up: #2e70e8;
+      --down: #16a085;
+      --danger: #c03b46;
+      --shadow: 0 14px 42px rgba(20, 35, 50, .08);
+      --radius: 18px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10161d;
+        --panel: rgba(24, 32, 41, .94);
+        --panel-solid: #182029;
+        --text: #edf3f8;
+        --muted: #93a0ad;
+        --line: rgba(235, 243, 250, .09);
+        --line-strong: rgba(235, 243, 250, .18);
+        --accent: #79a7ff;
+        --accent-soft: rgba(121, 167, 255, .13);
+        --up: #79a7ff;
+        --down: #48c9ae;
+        --danger: #ff8c95;
+        --shadow: 0 18px 52px rgba(0, 0, 0, .24);
+      }
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      padding: 24px; line-height: 1.45;
+      background: radial-gradient(circle at 100% 0%, rgba(40, 103, 232, .12), transparent 34%),
+                  radial-gradient(circle at 0 100%, rgba(22, 160, 133, .08), transparent 30%), var(--bg);
+    }
+    button, select, input { font: inherit; }
+    .shell { max-width: 1420px; margin: 0 auto; }
+    .hero { display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--down); box-shadow: 0 0 0 4px rgba(22, 160, 133, .12); vertical-align: 1px; }
+    h1 { margin: 8px 0 0; font-size: clamp(26px, 3vw, 38px); line-height: 1.12; letter-spacing: -.035em; }
+    .subtitle { margin: 9px 0 0; color: var(--muted); max-width: 800px; font-size: 14px; }
+    .hero-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; align-items: center; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 8px 12px; font-size: 12px; color: var(--muted); box-shadow: var(--shadow); }
+    .refresh { border: 1px solid var(--line-strong); background: var(--panel-solid); color: var(--text); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+    .refresh:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .refresh:disabled { cursor: wait; opacity: .55; transform: none; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .segment { display: inline-flex; padding: 4px; gap: 4px; border: 1px solid var(--line); background: var(--panel); border-radius: 14px; box-shadow: var(--shadow); }
+    .segment button, .sort button { border: 0; background: transparent; color: var(--muted); padding: 8px 12px; border-radius: 9px; cursor: pointer; }
+    .segment button.active { background: var(--accent); color: #fff; }
+    .node-picker { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
+    .node-picker select { min-width: 180px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-solid); color: var(--text); padding: 8px 10px; }
+    .notice { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 13px; }
+    .notice strong { color: var(--text); }
+    .error { display: none; margin-bottom: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(192, 59, 70, .28); background: rgba(192, 59, 70, .09); color: var(--danger); font-size: 13px; }
+    .error.visible { display: block; }
+    .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+    .card { padding: 18px; min-height: 126px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
+    .card-label { color: var(--muted); font-size: 12px; font-weight: 650; }
+    .card-value { margin-top: 10px; font-size: clamp(22px, 2.4vw, 32px); line-height: 1; font-weight: 720; letter-spacing: -.035em; }
+    .card-detail { margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .cards .label-online { border-color: rgba(22, 160, 133, .28); }
+    .cards .label-online .card-value { color: var(--down); }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(380px, .85fr); gap: 16px; align-items: stretch; }
+    .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; min-width: 0; }
+    .panel-head { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; padding: 17px 18px 14px; border-bottom: 1px solid var(--line); }
+    .panel-title { margin: 0; font-size: 15px; font-weight: 700; }
+    .panel-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .sort { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+    .sort button { border: 1px solid transparent; padding: 6px 9px; font-size: 12px; }
+    .sort button.active { border-color: var(--line-strong); background: var(--accent-soft); color: var(--text); }
+    .table-wrap { overflow: auto; max-height: 520px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { position: sticky; top: 0; z-index: 1; background: var(--panel-solid); }
+    th { padding: 10px 14px; text-align: left; color: var(--muted); font-size: 11px; font-weight: 650; white-space: nowrap; }
+    th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr { cursor: pointer; border-top: 1px solid var(--line); }
+    tbody tr:hover, tbody tr.selected { background: var(--accent-soft); }
+    tbody tr.selected { box-shadow: inset 3px 0 0 var(--accent); }
+    td { padding: 12px 14px; vertical-align: middle; white-space: nowrap; }
+    .ip { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; font-size: 12px; font-weight: 650; }
+    .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .device-name { font-weight: 680; }
+    .badge { display: inline-block; margin-left: 5px; border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 650; vertical-align: 1px; }
+    .badge.auto { color: var(--accent); background: var(--accent-soft); }
+    .badge.manual { color: var(--down); background: rgba(22, 160, 133, .12); }
+    .badge.online { color: var(--down); background: rgba(22, 160, 133, .15); }
+    .badge.offline { color: var(--muted); background: var(--line); }
+    .region { text-align: left; }
+    .region strong { display: block; color: var(--text); font-weight: 650; }
+    .region-sub {
+      display: block; margin-top: 3px; color: var(--muted); font-size: 11px;
+      overflow: visible; overflow-wrap: anywhere; white-space: normal;
+    }
+    .empty { display: grid; place-items: center; min-height: 230px; padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+    .empty strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 15px; }
+    .timeline-body { padding: 16px 18px 18px; }
+    .selected-row { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+    .selected-ip { font-size: 15px; font-weight: 700; }
+    .selected-meta { margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .timeline-total { text-align: right; font-weight: 720; font-size: 18px; }
+    .timeline-total span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .legend { display: flex; gap: 14px; color: var(--muted); font-size: 11px; margin: 3px 0 12px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 8px; height: 8px; border-radius: 3px; }
+    .swatch.up { background: var(--up); }
+    .swatch.down { background: var(--down); }
+    .chart { display: grid; gap: 5px; align-items: end; height: 230px; padding-top: 12px; border-top: 1px dashed var(--line); border-bottom: 1px solid var(--line-strong); }
+    .bar { height: 100%; display: flex; align-items: flex-end; min-width: 2px; border-radius: 5px 5px 0 0; outline: none; }
+    .bar:hover, .bar:focus { background: var(--accent-soft); }
+    .bar-stack { width: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: 4px 4px 2px 2px; }
+    .seg { min-height: 0; }
+    .seg.up { background: var(--up); }
+    .seg.down { background: var(--down); }
+    .axis { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 10px; }
+    .chart-meta { margin-top: 8px; color: var(--muted); font-size: 11px; text-align: right; }
+    .timeline-empty { display: grid; place-items: center; min-height: 250px; color: var(--muted); font-size: 13px; text-align: center; }
+    .footnote { margin-top: 16px; padding: 0 2px; color: var(--muted); font-size: 11px; }
+    .detail-panel { margin-top: 16px; }
+    .detail-panel .panel-head { align-items: center; }
+    .site-panel { margin-top: 16px; }
+    .site-name { font-weight: 680; word-break: break-all; }
+    .site-cell { max-width: 340px; white-space: normal; }
+    .site-panel .table-wrap { max-height: 420px; }
+    .link-button {
+      display: inline-block; margin-top: 4px; padding: 0; border: 0; background: transparent;
+      color: var(--accent); cursor: pointer; font-size: 11px; text-decoration: underline;
+    }
+    .ip-sites-dialog {
+      width: min(980px, calc(100vw - 32px)); max-height: 80vh; padding: 0; border: 1px solid var(--line-strong);
+      border-radius: 18px; background: var(--panel-solid); color: var(--text); box-shadow: var(--shadow);
+    }
+    .ip-sites-dialog::backdrop { background: rgba(7, 15, 28, .46); backdrop-filter: blur(2px); }
+    .modal-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .modal-title { margin: 0; font-size: 18px; }
+    .modal-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .modal-close { border: 1px solid var(--line-strong); border-radius: 9px; padding: 7px 11px; background: var(--panel-solid); color: var(--text); cursor: pointer; }
+    .modal-body { max-height: calc(80vh - 80px); overflow: auto; padding: 0 20px 20px; }
+    .modal-body .table-wrap { max-height: none; }
+    .modal-body table { margin-top: 4px; }
+    .merge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .merge-bar input { min-width: 180px; border: 1px solid var(--line-strong); border-radius: 9px; padding: 8px 10px; background: var(--panel-solid); color: var(--text); }
+    .merge-bar button { border: 1px solid var(--line-strong); border-radius: 9px; padding: 8px 11px; background: var(--panel-solid); color: var(--text); cursor: pointer; }
+    .merge-bar button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .merge-bar button:disabled { opacity: .45; cursor: not-allowed; }
+    .check-col { width: 34px; }
+    .check-col input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+    .detail-wrap { max-height: 360px; }
+    @media (max-width: 1100px) {
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      body { padding: 14px; }
+      .hero { flex-direction: column; }
+      .cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .card { padding: 15px; min-height: 112px; }
+      .merge-bar input { min-width: 0; width: 100%; }
+      .panel-head { flex-direction: column; gap: 10px; }
+      th:nth-child(2), td:nth-child(2), th:nth-child(6), td:nth-child(6) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> Proxy Traffic · AnyTLS</div>
+        <h1>代理流量排行</h1>
+        <p class="subtitle">按来源 IP 汇总节点出口流量，按地区和活跃时间推断疑似设备；可在明细中手动归并，动态 IP 会保留最新地址。</p>
+      </div>
+      <div class="hero-actions">
+        <div class="pill"><span class="dot"></span><span id="refreshState">等待数据</span></div>
+        <button class="refresh" id="refreshButton" type="button">刷新数据</button>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <div class="segment" id="rangeButtons" aria-label="时间范围">
+        <button type="button" data-hours="1">1 小时</button>
+        <button type="button" data-hours="24" class="active">24 小时</button>
+        <button type="button" data-hours="168">7 天</button>
+        <button type="button" data-hours="720">30 天</button>
+      </div>
+      <label class="node-picker" id="nodePicker" hidden>
+        <span>节点</span>
+        <select id="nodeSelect"></select>
+      </label>
+    </div>
+
+    <div class="notice">
+      <strong>统计口径：</strong>当前展示采集器上报的 AnyTLS 节点。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
+    </div>
+    <div class="error" id="errorBanner" role="alert"></div>
+
+    <section class="cards" aria-label="流量汇总">
+      <article class="card"><div class="card-label">总流量</div><div class="card-value" id="totalValue">—</div><div class="card-detail" id="totalDetail">等待采集</div></article>
+      <article class="card"><div class="card-label">上传</div><div class="card-value" id="uploadValue">—</div><div class="card-detail" id="uploadDetail">客户端发往节点</div></article>
+      <article class="card"><div class="card-label">下载</div><div class="card-value" id="downloadValue">—</div><div class="card-detail" id="downloadDetail">节点返回客户端</div></article>
+      <article class="card"><div class="card-label">设备 / 来源 IP</div><div class="card-value" id="deviceValue">—</div><div class="card-detail" id="deviceDetail">等待采集</div></article>
+      <article class="card label-online"><div class="card-label">在线 IP</div><div class="card-value" id="onlineValue">—</div><div class="card-detail" id="onlineDetail">近 3 分钟有上报</div></article>
+    </section>
+
+    <section class="layout">
+      <article class="panel">
+        <div class="panel-head">
+          <div><h2 class="panel-title">设备排行</h2><p class="panel-note">在线设备优先；点击一行查看时间趋势，自动结果可在下方确认</p></div>
+          <div class="sort" aria-label="排序方式">
+            <button type="button" data-sort="total" class="active">总流量</button>
+            <button type="button" data-sort="upload">上传</button>
+            <button type="button" data-sort="download">下载</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div class="empty" id="rankingEmpty"><div><strong>还没有聚合数据</strong>采集器首次启动会先建立流量基线，随后新的连接流量会在约 30 秒内出现。</div></div>
+          <table id="rankingTable" hidden>
+            <thead><tr><th>设备</th><th>地区</th><th>最近 IP</th><th class="num">总流量</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
+            <tbody id="rankingBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><div><h2 class="panel-title">使用时间趋势</h2><p class="panel-note" id="timelineSubtitle">选择设备后显示</p></div></div>
+        <div class="timeline-body">
+          <div class="timeline-empty" id="timelineEmpty">选择左侧设备查看时间趋势。</div>
+          <div id="timelineContent" hidden>
+            <div class="selected-row">
+              <div><div class="selected-ip" id="selectedIp">—</div><div class="selected-meta" id="selectedMeta">—</div></div>
+              <div class="timeline-total"><span id="selectedTotal">—</span><span id="selectedConnection">—</span></div>
+            </div>
+            <div class="legend"><span class="legend-item"><span class="swatch up"></span>上传</span><span class="legend-item"><span class="swatch down"></span>下载</span></div>
+            <div class="chart" id="chart" role="img" aria-label="流量时间趋势"></div>
+            <div class="axis"><span id="axisStart">—</span><span id="axisEnd">—</span></div>
+            <div class="chart-meta" id="chartMeta">—</div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel detail-panel">
+      <div class="panel-head">
+        <div><h2 class="panel-title">IP 明细与设备归并</h2><p class="panel-note">勾选来源 IP 后合并为一个设备；“恢复自动”撤销手动归并。合并结果会持久保存。</p></div>
+        <div class="merge-bar">
+          <input id="deviceLabel" type="text" maxlength="80" placeholder="设备名称（可选）">
+          <button id="mergeButton" type="button" class="primary" disabled>合并所选 IP</button>
+          <button id="resetButton" type="button" disabled>恢复自动</button>
+        </div>
+      </div>
+      <div class="table-wrap detail-wrap">
+        <table id="detailTable" hidden>
+          <thead><tr><th class="check-col"><input id="checkAll" type="checkbox" aria-label="选择全部来源 IP"></th><th>来源 IP</th><th>状态</th><th>地区</th><th>当前设备</th><th class="num">总流量</th><th>最近活动</th></tr></thead>
+          <tbody id="detailBody"></tbody>
+        </table>
+        <div class="empty" id="detailEmpty" hidden>当前时间范围没有来源 IP。</div>
+      </div>
+    </section>
+
+    <section class="panel site-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">目标站点访问流量</h2>
+          <p class="panel-note">按目标主机名汇总；显示该站点流量最大的来源 IP。已排除 IP-only 目标、Cloudflare challenge、DNS/ping、安全浏览探针和零流量记录；不记录 URL 路径或页面内容。</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="siteTable" hidden>
+          <thead><tr><th>目标站点</th><th class="num">总流量</th><th class="num">上传 / 下载</th><th class="num">访问 IP 数</th><th>访问最多 IP</th><th>最近活动</th></tr></thead>
+          <tbody id="siteBody"></tbody>
+        </table>
+        <div class="empty" id="siteEmpty" hidden><div><strong>还没有站点数据</strong>采集器会在下一次上报时带上目标主机名/IP 的聚合流量。</div></div>
+      </div>
+    </section>
+
+    <dialog class="ip-sites-dialog" id="ipSitesDialog">
+      <div class="modal-head">
+        <div><h2 class="modal-title" id="ipSitesTitle">访问域名</h2><p class="modal-subtitle" id="ipSitesSubtitle">—</p></div>
+        <button class="modal-close" id="closeIpSites" type="button">关闭</button>
+      </div>
+      <div class="modal-body">
+        <table id="ipSitesTable" hidden>
+          <thead><tr><th>目标站点</th><th>正在活跃</th><th class="num">总流量</th><th class="num">上传 / 下载</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
+          <tbody id="ipSitesBody"></tbody>
+        </table>
+        <div class="empty" id="ipSitesEmpty" hidden><div><strong>没有可显示的真实域名</strong>该 IP 当前只有链路 IP 或探针流量，已按噪声规则隐藏。</div></div>
+      </div>
+    </dialog>
+
+    <p class="footnote">仅统计采集器覆盖的 AnyTLS 入站来源 IP；地区来自 IPinfo（本地缓存），设备归并为启发式结果并可手动修正，目标站点只保留主机名/IP 聚合。链式代理场景只能看到下游入口 IP。页面每 60 秒在可见时自动刷新。</p>
+  </main>
+
+  <script>
+    const state = {
+      hours: 24,
+      sort: "total",
+      summary: null,
+      nodeId: null,
+      selectedDeviceId: null,
+      selectedIps: new Set(),
+      timeline: null,
+      loading: false,
+      timelineSeq: 0,
+    };
+
+    const el = Object.fromEntries([
+      "refreshButton", "refreshState", "errorBanner", "rangeButtons", "nodePicker",
+      "nodeSelect", "totalValue", "totalDetail", "uploadValue", "uploadDetail",
+      "downloadValue", "downloadDetail", "deviceValue", "deviceDetail",
+      "onlineValue", "onlineDetail",
+      "rankingEmpty", "rankingTable", "rankingBody", "timelineEmpty",
+      "timelineContent", "timelineSubtitle", "selectedIp", "selectedMeta",
+      "selectedTotal", "selectedConnection", "chart", "axisStart", "axisEnd",
+      "chartMeta", "detailTable", "detailBody", "detailEmpty", "checkAll",
+      "siteTable", "siteBody", "siteEmpty",
+      "ipSitesDialog", "ipSitesTitle", "ipSitesSubtitle", "ipSitesTable",
+      "ipSitesBody", "ipSitesEmpty", "closeIpSites",
+      "deviceLabel", "mergeButton", "resetButton",
+    ].map((id) => [id, document.getElementById(id)]));
+
+    function formatBytes(value) {
+      const n = Number(value) || 0;
+      if (n < 1024) return n + " B";
+      const units = ["KB", "MB", "GB", "TB", "PB"];
+      let size = n / 1024, index = 0;
+      while (size >= 1024 && index < units.length - 1) { size /= 1024; index += 1; }
+      return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[index];
+    }
+
+    function formatMinutes(value) {
+      const minutes = Math.max(0, Number(value) || 0);
+      if (minutes < 60) return minutes + " 分钟";
+      const hours = Math.floor(minutes / 60), rest = minutes % 60;
+      if (hours < 24) return rest ? hours + " 小时 " + rest + " 分" : hours + " 小时";
+      const days = Math.floor(hours / 24), restHours = hours % 24;
+      return restHours ? days + " 天 " + restHours + " 小时" : days + " 天";
+    }
+
+    function formatMoment(ms) {
+      if (!ms) return "—";
+      return new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(new Date(ms));
+    }
+
+    function formatBucket(ms, bucketMs) {
+      return new Intl.DateTimeFormat("zh-CN", bucketMs >= 86400000
+        ? { month: "2-digit", day: "2-digit" }
+        : { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
+      ).format(new Date(ms));
+    }
+
+    function bucketLabel(bucketMs) {
+      if (bucketMs <= 300000) return "5 分钟";
+      if (bucketMs <= 900000) return "15 分钟";
+      if (bucketMs <= 3600000) return "1 小时";
+      if (bucketMs <= 21600000) return "6 小时";
+      return "1 天";
+    }
+
+    function geoText(geo) {
+      const value = geo || {};
+      const parts = [value.country_flag, value.country_name, value.region_name, value.city_name].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "未知地区";
+    }
+
+    function setError(message) {
+      el.errorBanner.textContent = message || "";
+      el.errorBanner.classList.toggle("visible", Boolean(message));
+    }
+
+    function setLoading(loading) {
+      state.loading = loading;
+      el.refreshButton.disabled = loading;
+      el.refreshState.textContent = loading ? "正在刷新…" : "已刷新";
+    }
+
+    async function api(path, params) {
+      const query = new URLSearchParams();
+      Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).length) query.set(key, String(value));
+      });
+      const response = await fetch("/api/proxy-traffic/" + path + "?" + query.toString(), {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      const text = await response.text();
+      let payload = null;
+      try { payload = JSON.parse(text); } catch (_) {}
+      if (!response.ok) throw new Error(payload && payload.error ? payload.error : "请求失败（HTTP " + response.status + "）");
+      return payload;
+    }
+
+    function selectedNode() {
+      const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
+      return nodes.find((node) => node.node_id === state.nodeId) || nodes[0] || null;
+    }
+
+    function selectedDevice() {
+      const node = selectedNode();
+      const devices = node && Array.isArray(node.devices) ? node.devices : [];
+      return devices.find((device) => device.device_id === state.selectedDeviceId) || devices[0] || null;
+    }
+
+    function sortedDevices(node) {
+      const devices = node && Array.isArray(node.devices) ? node.devices.slice() : [];
+      return devices.sort((a, b) => {
+        const online = Number(Boolean(b.online)) - Number(Boolean(a.online));
+        if (online) return online;
+        const primary = (Number(b[state.sort]) || 0) - (Number(a[state.sort]) || 0);
+        return primary || (Number(b.total) || 0) - (Number(a.total) || 0);
+      });
+    }
+
+    function makeCell(className) {
+      const td = document.createElement("td");
+      if (className) td.className = className;
+      return td;
+    }
+
+    function textBlock(primary, secondary, primaryClass) {
+      const wrap = document.createElement("div");
+      const first = document.createElement("span");
+      if (primaryClass) first.className = primaryClass;
+      first.textContent = primary;
+      wrap.appendChild(first);
+      if (secondary) {
+        const second = document.createElement("span");
+        second.className = "subline";
+        second.textContent = secondary;
+        wrap.appendChild(second);
+      }
+      return wrap;
+    }
+
+    function renderNodePicker() {
+      const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
+      el.nodePicker.hidden = nodes.length <= 1;
+      el.nodeSelect.replaceChildren();
+      nodes.forEach((node) => {
+        const option = document.createElement("option");
+        option.value = node.node_id;
+        option.textContent = node.node_name;
+        option.selected = node.node_id === state.nodeId;
+        el.nodeSelect.appendChild(option);
+      });
+    }
+
+    function renderSummary() {
+      const node = selectedNode();
+      if (!node) {
+        el.totalValue.textContent = "—";
+        el.uploadValue.textContent = "—";
+        el.downloadValue.textContent = "—";
+        el.deviceValue.textContent = "0";
+        el.onlineValue.textContent = "0";
+        el.totalDetail.textContent = "暂无节点数据";
+        el.uploadDetail.textContent = "等待采集";
+        el.downloadDetail.textContent = "等待采集";
+        el.deviceDetail.textContent = "没有来源 IP";
+        el.onlineDetail.textContent = "近 3 分钟无上报";
+        return;
+      }
+      el.totalValue.textContent = formatBytes(node.total);
+      el.uploadValue.textContent = formatBytes(node.upload);
+      el.downloadValue.textContent = formatBytes(node.download);
+      el.deviceValue.textContent = String(node.device_count || 0);
+      const online = (node.sources || []).filter((source) => source.online);
+      el.onlineValue.textContent = String(online.length);
+      el.totalDetail.textContent = node.node_name + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
+      el.uploadDetail.textContent = "占总量 " + (node.total ? ((node.upload / node.total) * 100).toFixed(1) : "0.0") + "%";
+      el.downloadDetail.textContent = "占总量 " + (node.total ? ((node.download / node.total) * 100).toFixed(1) : "0.0") + "%";
+      el.deviceDetail.textContent = "来源 IP " + (node.source_count || 0) + " 个";
+      el.onlineDetail.textContent = online.length
+        ? online.slice(0, 2).map((source) => source.source_ip).join(" / ") + (online.length > 2 ? " 等 " + online.length + " 个" : "") + " · 在线设备 " + (node.online_device_count || 0)
+        : "近 3 分钟无上报";
+    }
+
+    function renderRanking() {
+      const node = selectedNode();
+      const devices = sortedDevices(node);
+      el.rankingBody.replaceChildren();
+      if (!devices.length) {
+        el.rankingTable.hidden = true;
+        el.rankingEmpty.hidden = false;
+        return;
+      }
+      el.rankingEmpty.hidden = true;
+      el.rankingTable.hidden = false;
+      devices.forEach((device, index) => {
+        const tr = document.createElement("tr");
+        tr.tabIndex = 0;
+        tr.dataset.device = device.device_id;
+        if (device.device_id === state.selectedDeviceId) tr.classList.add("selected");
+
+        const nameTd = makeCell();
+        const nameWrap = document.createElement("div");
+        const name = document.createElement("span");
+        name.className = "device-name";
+        name.textContent = device.label;
+        const badge = document.createElement("span");
+        badge.className = "badge " + (device.manual ? "manual" : "auto");
+        badge.textContent = device.manual ? "手动" : device.confidence === "high" ? "疑似·高" : "疑似";
+        nameWrap.append(name, badge);
+        if (device.online) {
+          const onlineBadge = document.createElement("span");
+          onlineBadge.className = "badge online";
+          onlineBadge.textContent = "在线";
+          nameWrap.appendChild(onlineBadge);
+        }
+        const sub = document.createElement("span");
+        sub.className = "subline";
+        sub.textContent = "第 " + (index + 1) + " 位 · " + device.ip_count + " 个历史 IP · 在线 "
+          + (device.online_ip_count || 0) + "/" + device.ip_count;
+        nameWrap.appendChild(sub);
+        nameTd.appendChild(nameWrap);
+
+        const regionTd = makeCell();
+        regionTd.title = device.asn_label;
+        const region = document.createElement("div");
+        region.className = "region";
+        const regionMain = document.createElement("strong");
+        regionMain.textContent = device.region_label;
+        const asnLabel = device.asn_label || "";
+        const asnShort = /^(多运营商|地区未知)$/.test(asnLabel) ? asnLabel : asnLabel.split(" ")[0];
+        const regionSub = document.createElement("span");
+        regionSub.className = "region-sub";
+        regionSub.textContent = asnShort;
+        region.append(regionMain, regionSub);
+        regionTd.appendChild(region);
+
+        const latestTd = makeCell();
+        const latest = document.createElement("div");
+        const latestIp = document.createElement("span");
+        latestIp.className = "ip";
+        latestIp.textContent = device.latest_ip;
+        const latestSub = document.createElement("span");
+        latestSub.className = "subline";
+        latestSub.textContent = "最新地址";
+        latest.append(latestIp, latestSub);
+        latestTd.appendChild(latest);
+
+        tr.append(
+          nameTd,
+          regionTd,
+          latestTd,
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(device.total) }),
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatMinutes(device.active_minutes) }),
+          (() => {
+            const td = makeCell();
+            td.appendChild(textBlock(formatMoment(device.last_seen_ms), "首次 " + formatMoment(device.first_seen_ms)));
+            return td;
+          })(),
+        );
+
+        const select = () => selectDevice(device.device_id);
+        tr.addEventListener("click", select);
+        tr.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+        });
+        el.rankingBody.appendChild(tr);
+      });
+    }
+
+    function renderDetail() {
+      const node = selectedNode();
+      const sources = node && Array.isArray(node.sources) ? node.sources.slice() : [];
+      el.detailBody.replaceChildren();
+      if (!sources.length) {
+        el.detailTable.hidden = true;
+        el.detailEmpty.hidden = false;
+        el.checkAll.checked = false;
+        updateMergeButtons();
+        return;
+      }
+      el.detailEmpty.hidden = true;
+      el.detailTable.hidden = false;
+      sources.sort((a, b) => (Number(b.online) - Number(a.online))
+        || (Number(b.last_seen_ms) || 0) - (Number(a.last_seen_ms) || 0));
+      sources.forEach((source) => {
+        const tr = document.createElement("tr");
+        const checkTd = document.createElement("td");
+        checkTd.className = "check-col";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.dataset.ip = source.source_ip;
+        checkbox.checked = state.selectedIps.has(source.source_ip);
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) state.selectedIps.add(source.source_ip);
+          else state.selectedIps.delete(source.source_ip);
+          updateMergeButtons();
+          syncCheckAll();
+        });
+        checkTd.appendChild(checkbox);
+
+        const ipTd = makeCell();
+        ipTd.appendChild(textBlock(source.source_ip, "首次 " + formatMoment(source.first_seen_ms), "ip"));
+        const sitesButton = document.createElement("button");
+        sitesButton.type = "button";
+        sitesButton.className = "link-button";
+        sitesButton.textContent = "查看域名";
+        sitesButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openIpSites(source.source_ip);
+        });
+        ipTd.appendChild(sitesButton);
+        const statusTd = makeCell();
+        const status = document.createElement("span");
+        status.className = "badge " + (source.online ? "online" : "offline");
+        status.textContent = source.online ? "在线" : "离线";
+        statusTd.appendChild(status);
+        const geoTd = makeCell();
+        const geo = document.createElement("div");
+        geo.className = "region";
+        const geoMain = document.createElement("strong");
+        geoMain.textContent = geoText(source);
+        geo.appendChild(geoMain);
+        if (source.asn) {
+          const geoSub = document.createElement("span");
+          geoSub.className = "region-sub";
+          geoSub.textContent = "AS" + source.asn + (source.asn_org ? " · " + source.asn_org : "");
+          geoSub.title = geoSub.textContent;
+          geo.appendChild(geoSub);
+        }
+        const deviceTd = makeCell();
+        deviceTd.textContent = source.device_label || "—";
+        const lastTd = makeCell();
+        lastTd.appendChild(textBlock(formatMoment(source.last_seen_ms), "活跃 " + formatMinutes(source.active_minutes)));
+        geoTd.appendChild(geo);
+        tr.append(
+          checkTd,
+          ipTd,
+          statusTd,
+          geoTd,
+          deviceTd,
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(source.total) }),
+          lastTd,
+        );
+        tr.addEventListener("click", (event) => {
+          if (event.target === checkbox) return;
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event("change"));
+        });
+        el.detailBody.appendChild(tr);
+      });
+      syncCheckAll();
+      updateMergeButtons();
+    }
+
+    function siteLabel(site) {
+      return site.startsWith("ip:") ? "IP · " + site.slice(3) : site;
+    }
+
+    function renderSites() {
+      const node = selectedNode();
+      const siteNodes = state.summary && Array.isArray(state.summary.site_nodes)
+        ? state.summary.site_nodes : [];
+      const siteNode = siteNodes.find((item) => item.node_id === (node && node.node_id));
+      const sites = siteNode && Array.isArray(siteNode.sites) ? siteNode.sites : [];
+      el.siteBody.replaceChildren();
+      if (!sites.length) {
+        el.siteTable.hidden = true;
+        el.siteEmpty.hidden = false;
+        return;
+      }
+      el.siteEmpty.hidden = true;
+      el.siteTable.hidden = false;
+      sites.forEach((site) => {
+        const tr = document.createElement("tr");
+        const siteTd = makeCell("site-cell");
+        const siteName = document.createElement("div");
+        siteName.className = "site-name";
+        siteName.textContent = siteLabel(site.site);
+        const siteSub = document.createElement("span");
+        siteSub.className = "subline";
+        siteSub.textContent = "目标主机 / IP";
+        siteTd.append(siteName, siteSub);
+
+        const topTd = makeCell();
+        const topIp = document.createElement("div");
+        topIp.className = "ip";
+        topIp.textContent = site.top_ip || "—";
+        const topSub = document.createElement("span");
+        topSub.className = "subline";
+        topSub.textContent = "占本站 " + ((Number(site.top_ip_share) || 0) * 100).toFixed(1) + "%";
+        topTd.append(topIp, topSub);
+        const lastTd = makeCell();
+        lastTd.appendChild(textBlock(formatMoment(site.last_seen_ms), "活跃 " + formatMinutes(site.active_minutes)));
+        tr.append(
+          siteTd,
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(site.total) }),
+          Object.assign(document.createElement("td"), {
+            className: "num",
+            textContent: formatBytes(site.upload) + " / " + formatBytes(site.download),
+          }),
+          Object.assign(document.createElement("td"), { className: "num", textContent: String(site.source_count || 0) }),
+          topTd,
+          lastTd,
+        );
+        el.siteBody.appendChild(tr);
+      });
+    }
+
+    async function openIpSites(ip) {
+      const node = selectedNode();
+      if (!node) return;
+      el.ipSitesTitle.textContent = ip + " · 访问域名";
+      el.ipSitesSubtitle.textContent = node.node_name + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时") + " · 仅显示真实域名 · 活跃=近 3 分钟";
+      el.ipSitesBody.replaceChildren();
+      el.ipSitesTable.hidden = true;
+      el.ipSitesEmpty.hidden = true;
+      if (!el.ipSitesDialog.open) el.ipSitesDialog.showModal();
+      try {
+        const payload = await api("ip-sites", {
+          hours: state.hours,
+          node_id: node.node_id,
+          ip,
+        });
+        const sites = Array.isArray(payload.sites) ? payload.sites : [];
+        if (!sites.length) {
+          el.ipSitesEmpty.hidden = false;
+          return;
+        }
+        el.ipSitesTable.hidden = false;
+        sites.forEach((site) => {
+          const tr = document.createElement("tr");
+          const siteTd = makeCell("site-cell");
+          const name = document.createElement("div");
+          name.className = "site-name";
+          name.textContent = siteLabel(site.site);
+          siteTd.appendChild(name);
+          const lastTd = makeCell();
+          lastTd.appendChild(textBlock(formatMoment(site.last_seen_ms), "活跃 " + formatMinutes(site.active_minutes)));
+          const statusTd = makeCell();
+          const status = document.createElement("span");
+          status.className = "badge " + (site.active ? "online" : "offline");
+          status.textContent = site.active ? "活跃" : "历史";
+          statusTd.appendChild(status);
+          tr.append(
+            siteTd,
+            statusTd,
+            Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(site.total) }),
+            Object.assign(document.createElement("td"), {
+              className: "num",
+              textContent: formatBytes(site.upload) + " / " + formatBytes(site.download),
+            }),
+            Object.assign(document.createElement("td"), { className: "num", textContent: formatMinutes(site.active_minutes) }),
+            lastTd,
+          );
+          el.ipSitesBody.appendChild(tr);
+        });
+      } catch (error) {
+        el.ipSitesEmpty.hidden = false;
+        el.ipSitesEmpty.textContent = "域名明细加载失败：" + error.message;
+      }
+    }
+
+    function syncCheckAll() {
+      const boxes = Array.from(el.detailBody.querySelectorAll("input[type=checkbox]"));
+      el.checkAll.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+      el.checkAll.indeterminate = boxes.some((box) => box.checked) && !el.checkAll.checked;
+    }
+
+    function updateMergeButtons() {
+      const hasSelection = state.selectedIps.size > 0;
+      el.mergeButton.disabled = !hasSelection;
+      el.resetButton.disabled = !hasSelection;
+    }
+
+    async function selectDevice(deviceId, force) {
+      if (!force && state.selectedDeviceId === deviceId && state.timeline) return;
+      state.selectedDeviceId = deviceId;
+      renderRanking();
+      const node = selectedNode();
+      const device = selectedDevice();
+      if (!node || !device) return;
+      el.timelineEmpty.hidden = true;
+      el.timelineContent.hidden = false;
+      el.selectedIp.textContent = device.label;
+      el.selectedMeta.textContent = device.region_label + " · " + device.ip_count + " 个历史 IP · 最新 " + device.latest_ip;
+      el.selectedTotal.textContent = formatBytes(device.total);
+      el.selectedConnection.textContent = "活跃 " + formatMinutes(device.active_minutes);
+      await loadTimeline(node.node_id, device.ips.map((item) => item.source_ip));
+    }
+
+    function fillBuckets(timeline) {
+      const bucketMs = Number(timeline.bucket_ms) || 3600000;
+      const byBucket = new Map();
+      (timeline.buckets || []).forEach((bucket) => byBucket.set(Number(bucket.bucket_ms), bucket));
+      const first = Math.floor(Number(timeline.window_start_ms) / bucketMs) * bucketMs;
+      const last = Math.floor(Number(timeline.window_end_ms) / bucketMs) * bucketMs;
+      const result = [];
+      for (let current = first; current <= last; current += bucketMs) {
+        result.push(byBucket.get(current) || { bucket_ms: current, upload: 0, download: 0, total: 0, active_minutes: 0 });
+      }
+      return result;
+    }
+
+    function renderTimeline() {
+      const timeline = state.timeline;
+      const device = selectedDevice();
+      if (!timeline || !device) {
+        el.timelineContent.hidden = true;
+        el.timelineEmpty.hidden = false;
+        el.timelineEmpty.textContent = "选择左侧设备查看时间趋势。";
+        return;
+      }
+      el.timelineEmpty.hidden = true;
+      el.timelineContent.hidden = false;
+      el.timelineSubtitle.textContent = device.label + " · " + bucketLabel(timeline.bucket_ms) + "粒度";
+      const buckets = fillBuckets(timeline);
+      const maximum = Math.max(1, ...buckets.map((bucket) => Number(bucket.total) || 0));
+      el.chart.style.gridTemplateColumns = "repeat(" + Math.max(1, buckets.length) + ", minmax(2px, 1fr))";
+      el.chart.replaceChildren();
+      if (!buckets.some((bucket) => Number(bucket.total) > 0)) {
+        const empty = document.createElement("div");
+        empty.className = "timeline-empty";
+        empty.style.gridColumn = "1 / -1";
+        empty.textContent = "所选设备在此时间窗口没有新增流量。";
+        el.chart.appendChild(empty);
+      } else {
+        buckets.forEach((bucket) => {
+          const bar = document.createElement("div");
+          bar.className = "bar";
+          bar.tabIndex = 0;
+          const label = formatBucket(bucket.bucket_ms, timeline.bucket_ms);
+          bar.title = label + "\n总计 " + formatBytes(bucket.total) + "\n上传 " + formatBytes(bucket.upload) + "\n下载 " + formatBytes(bucket.download);
+          bar.setAttribute("aria-label", bar.title);
+          const stack = document.createElement("div");
+          stack.className = "bar-stack";
+          const ratio = Math.min(1, (Number(bucket.total) || 0) / maximum);
+          stack.style.height = (ratio > 0 ? Math.max(2, ratio * 100) : 0) + "%";
+          const up = document.createElement("div");
+          up.className = "seg up";
+          up.style.flex = String(Math.max(0, Number(bucket.upload) || 0));
+          const down = document.createElement("div");
+          down.className = "seg down";
+          down.style.flex = String(Math.max(0, Number(bucket.download) || 0));
+          stack.append(down, up);
+          bar.appendChild(stack);
+          el.chart.appendChild(bar);
+        });
+      }
+      el.axisStart.textContent = formatBucket(Number(timeline.window_start_ms), timeline.bucket_ms);
+      el.axisEnd.textContent = formatBucket(Number(timeline.window_end_ms), timeline.bucket_ms);
+      el.chartMeta.textContent = "柱高按窗口内单 bucket 最大流量缩放 · " + buckets.length + " 个时间点";
+    }
+
+    async function loadTimeline(nodeId, ips) {
+      const sequence = ++state.timelineSeq;
+      state.timeline = null;
+      try {
+        const payload = await api("timeline", { hours: state.hours, node_id: nodeId, ips: ips.join(",") });
+        if (sequence !== state.timelineSeq) return;
+        state.timeline = payload;
+        renderTimeline();
+      } catch (error) {
+        if (sequence !== state.timelineSeq) return;
+        setError("趋势加载失败：" + error.message);
+        el.timelineContent.hidden = true;
+        el.timelineEmpty.hidden = false;
+        el.timelineEmpty.textContent = "暂时无法加载该设备的时间趋势。";
+      }
+    }
+
+    async function loadSummary(preferredDeviceId) {
+      if (state.loading) return;
+      setLoading(true);
+      setError("");
+      try {
+        const payload = await api("summary", { hours: state.hours });
+        state.summary = payload;
+        const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+        if (!nodes.length) {
+          state.nodeId = null;
+          state.selectedDeviceId = null;
+          state.timeline = null;
+        } else {
+          if (!nodes.some((node) => node.node_id === state.nodeId)) state.nodeId = nodes[0].node_id;
+          const node = selectedNode();
+          const devices = node && Array.isArray(node.devices) ? node.devices : [];
+          const requested = preferredDeviceId || state.selectedDeviceId;
+          state.selectedDeviceId = devices.some((device) => device.device_id === requested)
+            ? requested
+            : (devices[0] ? devices[0].device_id : null);
+        }
+        state.selectedIps.clear();
+        renderNodePicker();
+        renderSummary();
+        renderRanking();
+        renderDetail();
+        renderSites();
+        if (state.selectedDeviceId) await selectDevice(state.selectedDeviceId, true);
+        else {
+          state.timeline = null;
+          renderTimeline();
+          el.timelineSubtitle.textContent = "选择设备后显示";
+        }
+        el.refreshState.textContent = "更新于 " + new Intl.DateTimeFormat("zh-CN", {
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+        }).format(new Date());
+      } catch (error) {
+        setError("数据加载失败：" + error.message);
+        el.refreshState.textContent = "刷新失败";
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function mergeSelected() {
+      const node = selectedNode();
+      const ips = Array.from(state.selectedIps);
+      if (!node || !ips.length) return;
+      const label = el.deviceLabel.value.trim();
+      setError("");
+      try {
+        const result = await api("device-map", {
+          node_id: node.node_id,
+          action: "merge",
+          label: label || "手动设备",
+          ips: ips.join(","),
+        });
+        el.deviceLabel.value = "";
+        await loadSummary(result.device_id);
+      } catch (error) {
+        setError("设备归并失败：" + error.message);
+      }
+    }
+
+    async function resetSelected() {
+      const node = selectedNode();
+      const ips = Array.from(state.selectedIps);
+      if (!node || !ips.length) return;
+      setError("");
+      try {
+        await api("device-map", {
+          node_id: node.node_id,
+          action: "reset",
+          ips: ips.join(","),
+        });
+        await loadSummary();
+      } catch (error) {
+        setError("恢复自动失败：" + error.message);
+      }
+    }
+
+    el.rangeButtons.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-hours]");
+      if (!button) return;
+      const hours = Number(button.dataset.hours);
+      if (!hours || hours === state.hours) return;
+      state.hours = hours;
+      el.rangeButtons.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+      loadSummary();
+    });
+
+    el.nodeSelect.addEventListener("change", () => {
+      state.nodeId = el.nodeSelect.value;
+      state.selectedDeviceId = null;
+      state.selectedIps.clear();
+      loadSummary();
+    });
+
+    el.refreshButton.addEventListener("click", () => loadSummary());
+
+    document.querySelectorAll(".sort button").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.sort = button.dataset.sort;
+        document.querySelectorAll(".sort button").forEach((item) => item.classList.toggle("active", item === button));
+        renderRanking();
+      });
+    });
+
+    el.checkAll.addEventListener("change", () => {
+      const boxes = Array.from(el.detailBody.querySelectorAll("input[type=checkbox]"));
+      boxes.forEach((box) => {
+        box.checked = el.checkAll.checked;
+        if (box.checked) state.selectedIps.add(box.dataset.ip);
+        else state.selectedIps.delete(box.dataset.ip);
+      });
+      updateMergeButtons();
+    });
+
+    el.mergeButton.addEventListener("click", mergeSelected);
+    el.resetButton.addEventListener("click", resetSelected);
+    el.closeIpSites.addEventListener("click", () => el.ipSitesDialog.close());
+    el.ipSitesDialog.addEventListener("click", (event) => {
+      if (event.target === el.ipSitesDialog) el.ipSitesDialog.close();
+    });
+
+    setInterval(() => {
+      if (document.visibilityState === "visible" && state.selectedIps.size === 0) loadSummary();
+    }, 60000);
+
+    loadSummary();
+  </script>
+</body>
+</html>
