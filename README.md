@@ -50,10 +50,33 @@ Komari 管理页 iframe（traffic.html）
 
 - Komari `>= 1.6.0`
 - Python `>= 3.10`
-- 节点使用 sing-box，且开启 Clash API
-- 节点使用 sing-box Clash API；协议不限
+- 节点使用 Clash API 兼容内核，并开启 `/connections` 接口
 - 可选：`maxminddb` Python 包和 GeoLite2 / DB-IP 数据库
 - 可选：IPinfo token（免费额度有限）
+
+## 内核支持
+
+| 内核 | 粒度 | 接入方式 |
+|---|---|---|
+| sing-box | 完整：来源 IP + 域名 + 上下行字节数 | Clash API `/connections`，已实测 |
+| mihomo / Clash.Meta | 完整：来源 IP + 域名 + 上下行字节数 | Clash API `/connections`，字段兼容 |
+| Xray / v2ray-core | 不完整：只有 access log 的 IP/域名建连记录，或 Stats API 的用户/节点总量 | 无法直接提供每 IP、每域名的精确流量 |
+| Hysteria2 | 不完整：只有 `/traffic` 的用户总流量和 `/online` 在线设备 | 没有目标域名和每 IP 流量 |
+
+Xray 的 access log 记录“谁在什么时候连接了哪个域名”，但不记录该连接的上下行字节数；Stats API 只按 inbound/user 汇总。因此，Xray 作为入口内核时无法保持本页面的完整排行粒度。
+
+如果需要给 Xray 生态保留完整粒度，推荐把入口换成 mihomo 或 sing-box：
+
+```text
+客户端 -> mihomo / sing-box 入口（VLESS、Reality 等）
+                    │
+                    ├─ 直接出站
+                    └─ 或转发到本机 Xray/SOCKS5 上游
+```
+
+采集器部署在 mihomo / sing-box 入口，读取它的 Clash API；Xray 可以继续作为下游出站，但客户端不再直接连 Xray 入口。
+
+如果 Xray 必须作为客户端直连的入口，则只能接受降级模式（连接次数/用户总量，不含每域名精确流量），或在 Xray 侧做自定义字节日志改造。
 
 ## 安装
 
