@@ -302,6 +302,22 @@ async function saveRule(req, res) {
       reject(res, 400, "规则文件不在允许的目录内");
       return;
     }
+    const target = state.target && typeof state.target === "object" ? state.target : {};
+    const targetIp = String(target.ip || "").trim();
+    const targetName = String(target.name || "").trim();
+    if (targetIp || targetName) {
+      const clients = await server.call("admin:listClients");
+      const selected = (Array.isArray(clients) ? clients : [])
+        .find((item) => String(item.uuid || "") === client);
+      const allowed = selected && (
+        (targetIp && String(selected.ipv4 || "") === targetIp) ||
+        (targetName && String(selected.name || "").includes(targetName))
+      );
+      if (!allowed) {
+        reject(res, 400, "规则文件只存在于指定节点，不能保存到其他 VPS");
+        return;
+      }
+    }
     const preparedResponse = await backendFetch("/api/proxy-traffic/rules/prepare", {
       method: "POST",
       headers: {

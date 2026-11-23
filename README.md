@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：2.2.3
+> 当前版本：2.2.4
 
 ## 功能
 
@@ -209,13 +209,15 @@ https://sub.example.com/sub/<token>?format=base64
 
 可视规则编辑只重写 `rules:` 区块，其他配置保持原样；`rules:` 区块内的注释会在可视化保存时被规范化移除。需要保留注释时请使用“YAML 源码”模式。
 
-规则文件由 `proxy-traffic` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面默认优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；如果节点列表变化，请手动确认“执行节点”。
+规则文件由 `proxy-traffic` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面会优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；建议配置 `PROXY_TRAFFIC_RULE_TARGET_IP` / `PROXY_TRAFFIC_RULE_TARGET_NAME`，配置后规则页只显示该节点，保存接口也会拒绝其他 VPS。
 
 如果使用 Docker 部署，需要把宿主机的 `/var/www/premium` 以只读方式挂载到聚合服务容器；保存仍然走 Komari 远程执行。若目录不同，修改：
 
 ```bash
 PROXY_TRAFFIC_RULES_DIR=/实际/规则目录
 PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.example.com
+PROXY_TRAFFIC_RULE_TARGET_IP=规则文件所在节点IP
+PROXY_TRAFFIC_RULE_TARGET_NAME=规则文件所在节点名称
 ```
 
 ### 1. 部署聚合服务
@@ -448,6 +450,8 @@ docker restart komari
 | `PROXY_TRAFFIC_SUB_BASE_URL` | 空 | 可选默认订阅基址，例如 `https://komari.example.com/proxy-traffic-sub` 或 `https://sub.example.com/sub` |
 | `PROXY_TRAFFIC_RULES_DIR` | `/var/www/premium` | 分流规则 YAML 扫描目录，匹配 `*/mihomo.yaml` |
 | `PROXY_TRAFFIC_RULE_PUBLIC_BASE` | `https://premium.syngnat.top` | 规则文件对应的订阅域名基址 |
+| `PROXY_TRAFFIC_RULE_TARGET_IP` | 空 | 规则文件所在 Komari 节点 IP；配置后不允许保存到其他 VPS |
+| `PROXY_TRAFFIC_RULE_TARGET_NAME` | 空 | 规则文件所在 Komari 节点名称匹配串 |
 | `IPINFO_TOKEN` | 空 | 可选 IPinfo token，不填也能用免费额度 |
 
 ### 采集器配置

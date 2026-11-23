@@ -15,6 +15,8 @@ Environment=PROXY_TRAFFIC_PORT=9460
 Environment=PROXY_TRAFFIC_SUB_BASE_URL=
 Environment=PROXY_TRAFFIC_RULES_DIR=/var/www/premium
 Environment=PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.syngnat.top
+Environment=PROXY_TRAFFIC_RULE_TARGET_IP=
+Environment=PROXY_TRAFFIC_RULE_TARGET_NAME=
 ExecStart=/opt/proxy-traffic/venv/bin/python /opt/proxy-traffic/server.py
 Restart=always
 RestartSec=3s

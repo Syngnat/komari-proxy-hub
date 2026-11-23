@@ -64,6 +64,12 @@ RULE_DIR = Path(os.environ.get('PROXY_TRAFFIC_RULES_DIR', '/var/www/premium'))
 RULE_PUBLIC_BASE = os.environ.get(
     'PROXY_TRAFFIC_RULE_PUBLIC_BASE', 'https://premium.syngnat.top'
 ).strip().rstrip('/')
+RULE_TARGET_IP = os.environ.get(
+    'PROXY_TRAFFIC_RULE_TARGET_IP', ''
+).strip()
+RULE_TARGET_NAME = os.environ.get(
+    'PROXY_TRAFFIC_RULE_TARGET_NAME', ''
+).strip()
 NODE_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
 SITE_RE = re.compile(r'^[A-Za-z0-9._:-]{1,253}$')
 SUB_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,128}$')
@@ -2807,6 +2813,7 @@ def discover_rule_files() -> dict:
             'ok': True,
             'root': str(RULE_DIR),
             'public_base': RULE_PUBLIC_BASE,
+        'target': {'ip': RULE_TARGET_IP, 'name': RULE_TARGET_NAME},
             'files': [],
             'error': '规则目录不存在',
         }
@@ -2835,6 +2842,7 @@ def discover_rule_files() -> dict:
         'ok': True,
         'root': str(RULE_DIR),
         'public_base': RULE_PUBLIC_BASE,
+        'target': {'ip': RULE_TARGET_IP, 'name': RULE_TARGET_NAME},
         'files': files,
     }
     if errors:
@@ -2912,7 +2920,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.3'
+    server_version = 'ProxyTrafficAggregate/2.2.4'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:

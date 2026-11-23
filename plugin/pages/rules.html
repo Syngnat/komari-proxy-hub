@@ -266,7 +266,7 @@
       "URL-REGEX", "DOMAIN-REGEX", "NETWORK", "MATCH", "FINAL",
     ];
 
-    let state = { files: [], root: "", public_base: "" };
+    let state = { files: [], root: "", public_base: "", target: {} };
     let clients = [];
     let currentFile = null;
     let content = "";
@@ -322,23 +322,37 @@
       try { return new Date(value).toLocaleString(); } catch (_) { return "—"; }
     }
 
-    function preferredClient() {
-      return clients.find((client) =>
-        /bero/i.test(client.name || "") ||
-        /^94\.103\.173\.47$/.test(client.ipv4 || "")
-      ) || clients[0] || null;
-    }
-
     function renderClients() {
       el.clientSelect.replaceChildren();
-      clients.forEach((client) => {
+      const target = state.target || {};
+      const targetIp = String(target.ip || "").trim();
+      const targetName = String(target.name || "").trim();
+      let candidates = clients.filter((client) =>
+        (targetIp && String(client.ipv4 || "") === targetIp) ||
+        (targetName && String(client.name || "").includes(targetName))
+      );
+      if (!candidates.length) {
+        candidates = clients.filter((client) =>
+          /bero/i.test(client.name || "") ||
+          /^94\.103\.173\.47$/.test(client.ipv4 || "")
+        );
+      }
+      if (!candidates.length) candidates = clients;
+      candidates.forEach((client) => {
         const option = document.createElement("option");
         option.value = client.uuid;
         option.textContent = client.name + (client.ipv4 ? " · " + client.ipv4 : "");
         el.clientSelect.appendChild(option);
       });
-      const preferred = preferredClient();
+      const preferred = candidates.find((client) =>
+        (targetIp && String(client.ipv4 || "") === targetIp) ||
+        (targetName && String(client.name || "").includes(targetName))
+      ) || candidates[0];
       if (preferred) el.clientSelect.value = preferred.uuid;
+      el.clientSelect.disabled = candidates.length === 1;
+      if (candidates.length === 1) {
+        el.clientSelect.title = "规则文件只存在于该节点";
+      }
     }
 
     function renderFileList() {
@@ -750,6 +764,7 @@
           files: Array.isArray(payload.files) ? payload.files : [],
           root: payload.root || "",
           public_base: payload.public_base || "",
+          target: payload.target && typeof payload.target === "object" ? payload.target : {},
         };
         el.rootPath.textContent = state.root || "—";
         renderFileList();
@@ -777,6 +792,7 @@
         option.value = "";
         option.textContent = "读取节点失败：" + error.message;
         el.clientSelect.appendChild(option);
+        el.clientSelect.disabled = true;
       }
     }
 
@@ -888,7 +904,7 @@
 
     renderRuleTypeSelect();
     resetRuleForm();
-    Promise.all([loadClients(), loadState()]).catch((error) => {
+    loadState().then(loadClients).catch((error) => {
       setStatus("初始化失败：" + error.message, "error");
     });
   </script>
