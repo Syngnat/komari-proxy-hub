@@ -87,7 +87,7 @@
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px;
-      border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
+      border: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600;
     }
     .badge.accent { color: var(--accent); border-color: rgba(40, 103, 232, .35); }
     .badge.ok { color: var(--ok); border-color: rgba(19, 138, 114, .35); }
@@ -195,16 +195,16 @@
     }
     .rule-type[open] > summary::before, .rule-group[open] > summary::before { transform: rotate(90deg); }
     .rule-type > summary:hover, .rule-group > summary:hover { background: var(--soft); }
-    .rule-type-name { font-weight: 700; font-size: 13px; }
-    .rule-type-counts { margin-left: auto; color: var(--muted); font-size: 11px; text-align: right; }
+    .rule-type-name { font-weight: 700; font-size: 15px; }
+    .rule-type-counts { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
     .rule-type-body { padding: 0 12px 12px 42px; }
     .rule-group {
       margin-top: 8px; border: 1px solid var(--line); border-radius: 10px;
       overflow: hidden; background: var(--panel);
     }
     .rule-group > summary { padding: 9px 12px; background: rgba(127, 127, 127, .035); }
-    .rule-group-name { font-weight: 650; font-size: 12px; overflow-wrap: anywhere; }
-    .rule-group-count { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .rule-group-name { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
+    .rule-group-count { margin-left: auto; color: var(--muted); font-size: 13px; }
     .rule-group-body { border-top: 1px solid var(--line); }
     .rule-item {
       display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(110px, 180px) auto;
@@ -215,19 +215,19 @@
     .rule-item:hover { background: rgba(127, 127, 127, .028); }
     .rule-index {
       grid-area: index; color: var(--muted);
-      font: 11px/1.7 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font: 12px/1.7 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
     }
-    .rule-value { grid-area: value; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
-    .rule-options { grid-area: options; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .rule-value { grid-area: value; min-width: 0; overflow-wrap: anywhere; font-size: 15px; }
+    .rule-options { grid-area: options; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
     .rule-item > .rule-actions { grid-area: actions; }
     .rule-empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 13px; }
     table { width: 100%; border-collapse: collapse; min-width: 760px; }
-    th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 12px; }
-    th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); font-size: 11px; }
+    th, td { padding: 10px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 15px; }
+    th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); font-size: 13px; }
     tr:last-child td { border-bottom: 0; }
     .rule-text { overflow-wrap: anywhere; }
     .rule-actions { white-space: nowrap; }
-    .rule-actions button { padding: 2px 5px; margin: 0 2px 2px 0; }
+    .rule-actions button { padding: 4px 9px; margin: 0 2px 2px 0; font-size: 14px; }
     .empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
     .yaml-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
     .yaml-wrap {
