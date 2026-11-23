@@ -1,5 +1,5 @@
 [Unit]
-Description=Komari proxy traffic AnyTLS collector
+Description=Komari proxy traffic collector
 After=network-online.target
 Wants=network-online.target
 

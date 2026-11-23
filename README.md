@@ -1,6 +1,6 @@
 # Komari 代理流量排行
 
-一个自托管的 Komari 插件：从 sing-box Clash API 采集代理连接，按来源 IP 汇总上传、下载、在线状态、地区、目标站点，并在 Komari 管理后台展示排行榜。支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议。
+一个自托管的 Komari 插件：从 Clash API 或 Xray access log 采集代理连接，按来源 IP 汇总上传、下载、在线状态、地区、目标站点，并在 Komari 管理后台展示排行榜。支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议。
 
 > 作者：Syngnat
 >
