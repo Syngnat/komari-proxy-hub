@@ -4,11 +4,12 @@
 
 > 作者：Syngnat
 >
-> 当前版本：1.4.2
+> 当前版本：1.5.0
 
 ## 功能
 
 - 按来源 IP 统计上传、下载、连接数和活跃时间
+- 支持多个节点同时显示与汇总，默认全部节点，可勾选任意节点组合
 - 近 3 分钟有上报即视为在线，在线设备排在前面
 - 统计口径中的节点名称来自接口 `node_name`，不写死具体节点
 - 使用 IPinfo 解析国家、省州、城市和 ASN，本地缓存结果
@@ -40,7 +41,7 @@ Komari 管理页 iframe（traffic.html）
 
 组件说明：
 
-- `collector/collector.py`：部署在每个 AnyTLS 节点，读取 sing-box Clash API，过滤出 AnyTLS 入站连接并上传分钟级聚合数据。
+- `collector/collector.py`：部署在每个 AnyTLS 节点，读取 sing-box Clash API，过滤出 AnyTLS 入站连接并上传分钟级聚合数据。每个节点使用独立的 `node_id` / `node_name`。
 - `server/server.py`：部署在 Komari 主机，接收多个节点的数据，做 GeoIP、设备聚类、目标站点和查询接口。
 - `plugin/`：Komari 插件清单、路由代理和管理页。
 
@@ -156,6 +157,39 @@ sudo journalctl -u proxy-traffic-collector -f
 
 `node_id` 是稳定且唯一的节点标识，发布后不要随意修改，否则历史数据会归到新节点。`node_name` 是页面显示名称。
 
+#### 多节点
+
+每个节点单独运行一个采集器，使用不同的 `node_id` 和 `node_name`。聚合服务会自动接收并展示所有已上报节点，无需在插件里预先写死节点名单。
+
+例如节点 A：
+
+```json
+{
+  "clash_api": "http://127.0.0.1:9090",
+  "clash_secret_file": "/etc/proxy-traffic/clash-secret",
+  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
+  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "node_id": "lax-01",
+  "node_name": "LAX-01",
+  "db_path": "/var/lib/proxy-traffic/traffic.db"
+}
+```
+
+节点 B 的配置保留节点 A 的其他字段，只替换 `node_id` 和 `node_name`：
+
+```json
+{
+  "node_id": "hkg-01",
+  "node_name": "HKG-01"
+}
+```
+
+页面右上角的“节点”菜单支持多选：
+
+- 默认选择全部节点。
+- 可只勾选一个或多个节点，汇总卡片、设备排行、IP 明细和目标站点会按所选节点合并。
+- 设备的手动归并按节点隔离，一次只能合并同一节点下的来源 IP。
+
 ### 4. 从 GitHub 插件市场安装
 
 在 Komari 管理后台的插件市场中添加自定义源：
@@ -227,7 +261,7 @@ docker restart komari
 
 - **只采集聚合元数据**：来源 IP、上下行字节数、连接数、连接开始/结束时间、目标主机名或 IP。不采集 UA、URL 路径、查询参数、Referer 或页面内容。
 - **共享密码无法可靠区分设备**：多个用户共用同一个 AnyTLS 密码时，只能按来源 IP 和设备行为推断，不能做严格身份归属。
-- **“疑似设备”是启发式**：依据同国家 / ASN、地区一致、活跃分钟不重叠和 IP 切换间隔聚类，必须人工确认。IP 变化频繁或多人同时在线时可能误合并。
+- **“疑似设备”是启发式**：依据同国家 / ASN、地区一致、活跃分钟不重叠和 IP 切换间隔聚类，必须人工确认。IP 变化频繁或多人同时在线时可能误合并。设备归并只在单个节点内生效。
 - **链式代理有观测边界**：入口节点看到的是下游入口 IP。若下游再做代理，入口节点看不到隧道内的最终域名。
 - **地区可能漂移**：IPinfo 和 GeoIP 数据库的城市级结果只作参考，尤其是移动网络、Anycast 和企业出口。
 - **只统计 AnyTLS**：采集器只处理 `type` 以 `anytls` 开头的连接。

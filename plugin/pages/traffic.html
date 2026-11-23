@@ -64,8 +64,31 @@
     .segment { display: inline-flex; padding: 4px; gap: 4px; border: 1px solid var(--line); background: var(--panel); border-radius: 14px; box-shadow: var(--shadow); }
     .segment button, .sort button { border: 0; background: transparent; color: var(--muted); padding: 8px 12px; border-radius: 9px; cursor: pointer; }
     .segment button.active { background: var(--accent); color: #fff; }
-    .node-picker { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
-    .node-picker select { min-width: 180px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-solid); color: var(--text); padding: 8px 10px; }
+    .node-picker { position: relative; display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
+    .node-trigger {
+      min-width: 180px; max-width: 320px; text-align: left; border: 1px solid var(--line-strong);
+      border-radius: 10px; background: var(--panel-solid); color: var(--text); padding: 8px 30px 8px 10px;
+      cursor: pointer; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .node-trigger::after { content: "▾"; position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+    .node-trigger[aria-expanded="true"]::after { content: "▴"; }
+    .node-menu {
+      position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; width: min(320px, calc(100vw - 48px));
+      max-height: 360px; overflow: auto; padding: 10px; border: 1px solid var(--line-strong); border-radius: 14px;
+      background: var(--panel-solid); box-shadow: var(--shadow);
+    }
+    .node-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 9px; }
+    .node-menu-head strong { color: var(--text); font-size: 12px; }
+    .node-menu-head button {
+      border: 1px solid var(--line); border-radius: 8px; background: var(--panel-solid); color: var(--muted);
+      padding: 4px 8px; font-size: 11px; cursor: pointer;
+    }
+    .node-menu-head button:disabled { opacity: .45; cursor: default; }
+    .node-selection-meta { padding: 0 2px 8px; color: var(--muted); font-size: 11px; }
+    .node-option { display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: 9px; cursor: pointer; color: var(--text); font-size: 12px; }
+    .node-option:hover { background: var(--accent-soft); }
+    .node-option input { margin: 0; accent-color: var(--accent); }
+    .node-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .notice { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 13px; }
     .notice strong { color: var(--text); }
     .error { display: none; margin-bottom: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(192, 59, 70, .28); background: rgba(192, 59, 70, .09); color: var(--danger); font-size: 13px; }
@@ -102,6 +125,7 @@
     .badge.manual { color: var(--down); background: rgba(22, 160, 133, .12); }
     .badge.online { color: var(--down); background: rgba(22, 160, 133, .15); }
     .badge.offline { color: var(--muted); background: var(--line); }
+    .badge.node { color: var(--muted); background: var(--line); }
     .region { text-align: left; }
     .region strong { display: block; color: var(--text); font-weight: 650; }
     .region-sub {
@@ -183,7 +207,7 @@
       <div>
         <div class="eyebrow"><span class="dot"></span> Proxy Traffic · AnyTLS</div>
         <h1>代理流量排行</h1>
-        <p class="subtitle">按来源 IP 汇总节点出口流量，按地区和活跃时间推断疑似设备；可在明细中手动归并，动态 IP 会保留最新地址。</p>
+        <p class="subtitle">按来源 IP 汇总节点出口流量，支持多节点合并查看；按地区和活跃时间推断疑似设备，动态 IP 会保留最新地址。</p>
       </div>
       <div class="hero-actions">
         <div class="pill"><span class="dot"></span><span id="refreshState">等待数据</span></div>
@@ -198,10 +222,18 @@
         <button type="button" data-hours="168">7 天</button>
         <button type="button" data-hours="720">30 天</button>
       </div>
-      <label class="node-picker" id="nodePicker" hidden>
+      <div class="node-picker" id="nodePicker" hidden>
         <span>节点</span>
-        <select id="nodeSelect"></select>
-      </label>
+        <button class="node-trigger" id="nodeTrigger" type="button" aria-haspopup="true" aria-expanded="false">全部节点</button>
+        <div class="node-menu" id="nodeMenu" hidden>
+          <div class="node-menu-head">
+            <strong>显示节点</strong>
+            <button id="nodeSelectAll" type="button">全选</button>
+          </div>
+          <div class="node-selection-meta" id="nodeSelectionMeta"></div>
+          <div id="nodeOptions"></div>
+        </div>
+      </div>
     </div>
 
     <div class="notice">
@@ -256,7 +288,7 @@
 
     <section class="panel detail-panel">
       <div class="panel-head">
-        <div><h2 class="panel-title">IP 明细与设备归并</h2><p class="panel-note">勾选来源 IP 后合并为一个设备；“恢复自动”撤销手动归并。合并结果会持久保存。</p></div>
+        <div><h2 class="panel-title">IP 明细与设备归并</h2><p class="panel-note">勾选同一节点下的来源 IP 后合并为一个设备；“恢复自动”撤销手动归并。合并结果会持久保存。</p></div>
         <div class="merge-bar">
           <input id="deviceLabel" type="text" maxlength="80" placeholder="设备名称（可选）">
           <button id="mergeButton" type="button" class="primary" disabled>合并所选 IP</button>
@@ -265,7 +297,7 @@
       </div>
       <div class="table-wrap detail-wrap">
         <table id="detailTable" hidden>
-          <thead><tr><th class="check-col"><input id="checkAll" type="checkbox" aria-label="选择全部来源 IP"></th><th>来源 IP</th><th>状态</th><th>地区</th><th>当前设备</th><th class="num">总流量</th><th>最近活动</th></tr></thead>
+          <thead><tr><th class="check-col"><input id="checkAll" type="checkbox" aria-label="选择全部来源 IP"></th><th>来源 IP</th><th>节点</th><th>状态</th><th>地区</th><th>当前设备</th><th class="num">总流量</th><th>最近活动</th></tr></thead>
           <tbody id="detailBody"></tbody>
         </table>
         <div class="empty" id="detailEmpty" hidden>当前时间范围没有来源 IP。</div>
@@ -310,17 +342,19 @@
       hours: 24,
       sort: "total",
       summary: null,
-      nodeId: null,
-      selectedDeviceId: null,
+      nodeIds: new Set(),
+      selectedDeviceKey: null,
       selectedIps: new Set(),
       timeline: null,
       loading: false,
+      pendingRefresh: false,
       timelineSeq: 0,
     };
 
     const el = Object.fromEntries([
       "refreshButton", "refreshState", "errorBanner", "rangeButtons", "nodePicker", "scopeNodes",
-      "nodeSelect", "totalValue", "totalDetail", "uploadValue", "uploadDetail",
+      "nodeTrigger", "nodeMenu", "nodeOptions", "nodeSelectAll", "nodeSelectionMeta",
+      "totalValue", "totalDetail", "uploadValue", "uploadDetail",
       "downloadValue", "downloadDetail", "deviceValue", "deviceDetail",
       "onlineValue", "onlineDetail",
       "rankingEmpty", "rankingTable", "rankingBody", "timelineEmpty",
@@ -405,19 +439,58 @@
       return payload;
     }
 
-    function selectedNode() {
+    function allNodes() {
       const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
-      return nodes.find((node) => node.node_id === state.nodeId) || nodes[0] || null;
+      return nodes;
+    }
+
+    function selectedNodes() {
+      const nodes = allNodes();
+      if (!state.nodeIds.size) return nodes;
+      const selected = nodes.filter((node) => state.nodeIds.has(node.node_id));
+      return selected.length ? selected : nodes;
+    }
+
+    function allNodesSelected() {
+      const nodes = allNodes();
+      return nodes.length > 0 && nodes.every((node) => state.nodeIds.has(node.node_id));
+    }
+
+    function selectionLabel() {
+      const nodes = allNodes();
+      const selected = selectedNodes();
+      if (!nodes.length) return "暂无节点";
+      if (allNodesSelected()) return nodes.length === 1 ? nodes[0].node_name : "全部 " + nodes.length + " 个节点";
+      if (selected.length === 1) return selected[0].node_name;
+      return "已选 " + selected.length + " / " + nodes.length + " 个节点";
+    }
+
+    function deviceKey(nodeId, deviceId) {
+      return nodeId + "|" + deviceId;
+    }
+
+    function ipKey(nodeId, ip) {
+      return nodeId + "|" + ip;
+    }
+
+    function allDevices() {
+      const result = [];
+      selectedNodes().forEach((node) => {
+        (Array.isArray(node.devices) ? node.devices : []).forEach((device) => {
+          result.push({ ...device, _node_id: node.node_id, _node_name: node.node_name });
+        });
+      });
+      return result;
     }
 
     function selectedDevice() {
-      const node = selectedNode();
-      const devices = node && Array.isArray(node.devices) ? node.devices : [];
-      return devices.find((device) => device.device_id === state.selectedDeviceId) || devices[0] || null;
+      const devices = allDevices();
+      return devices.find((device) => deviceKey(device._node_id, device.device_id) === state.selectedDeviceKey)
+        || devices[0]
+        || null;
     }
 
-    function sortedDevices(node) {
-      const devices = node && Array.isArray(node.devices) ? node.devices.slice() : [];
+    function sortedDevices(devices) {
       return devices.sort((a, b) => {
         const online = Number(Boolean(b.online)) - Number(Boolean(a.online));
         if (online) return online;
@@ -448,34 +521,60 @@
     }
 
     function renderNodePicker() {
-      const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
+      const nodes = allNodes();
+      const selected = selectedNodes();
       el.nodePicker.hidden = nodes.length <= 1;
-      el.nodeSelect.replaceChildren();
+      el.nodeTrigger.textContent = selectionLabel();
+      el.nodeOptions.replaceChildren();
       nodes.forEach((node) => {
-        const option = document.createElement("option");
-        option.value = node.node_id;
-        option.textContent = node.node_name;
-        option.selected = node.node_id === state.nodeId;
-        el.nodeSelect.appendChild(option);
+        const label = document.createElement("label");
+        label.className = "node-option";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = node.node_id;
+        checkbox.checked = !state.nodeIds.size || state.nodeIds.has(node.node_id);
+        checkbox.addEventListener("change", () => {
+          const next = new Set(state.nodeIds.size ? state.nodeIds : nodes.map((item) => item.node_id));
+          if (checkbox.checked) next.add(node.node_id);
+          else next.delete(node.node_id);
+          if (!next.size) {
+            checkbox.checked = true;
+            return;
+          }
+          state.nodeIds = next;
+          state.selectedDeviceKey = null;
+          state.selectedIps.clear();
+          loadSummary();
+        });
+        const name = document.createElement("span");
+        name.textContent = node.node_name;
+        name.title = node.node_name;
+        label.append(checkbox, name);
+        el.nodeOptions.appendChild(label);
       });
+      el.nodeSelectionMeta.textContent = "已选 " + selected.length + " / " + nodes.length + " 个节点";
+      el.nodeSelectAll.disabled = allNodesSelected();
     }
 
     function renderScope() {
-      const nodes = state.summary && Array.isArray(state.summary.nodes) ? state.summary.nodes : [];
+      const nodes = selectedNodes();
       if (!nodes.length) {
         el.scopeNodes.textContent = "暂无采集节点";
         el.scopeNodes.title = "";
         return;
       }
       const visible = nodes.slice(0, 3).map((node) => node.node_name);
-      el.scopeNodes.textContent = visible.join("、") + (nodes.length > visible.length ? " 等 " + nodes.length + " 个节点" : "");
+      const prefix = allNodesSelected()
+        ? (nodes.length === 1 ? "" : "全部 " + nodes.length + " 个节点 · ")
+        : "已选 " + nodes.length + " / " + allNodes().length + " 个节点 · ";
+      el.scopeNodes.textContent = prefix + visible.join("、") + (nodes.length > visible.length ? " 等" : "");
       el.scopeNodes.title = nodes.map((node) => node.node_name).join("\n");
     }
 
     function renderSummary() {
       renderScope();
-      const node = selectedNode();
-      if (!node) {
+      const nodes = selectedNodes();
+      if (!nodes.length) {
         el.totalValue.textContent = "—";
         el.uploadValue.textContent = "—";
         el.downloadValue.textContent = "—";
@@ -488,24 +587,32 @@
         el.onlineDetail.textContent = "近 3 分钟无上报";
         return;
       }
-      el.totalValue.textContent = formatBytes(node.total);
-      el.uploadValue.textContent = formatBytes(node.upload);
-      el.downloadValue.textContent = formatBytes(node.download);
-      el.deviceValue.textContent = String(node.device_count || 0);
-      const online = (node.sources || []).filter((source) => source.online);
+      const upload = nodes.reduce((sum, node) => sum + (Number(node.upload) || 0), 0);
+      const download = nodes.reduce((sum, node) => sum + (Number(node.download) || 0), 0);
+      const total = upload + download;
+      const sourceCount = nodes.reduce((sum, node) => sum + (Number(node.source_count) || 0), 0);
+      const deviceCount = nodes.reduce((sum, node) => sum + (Number(node.device_count) || 0), 0);
+      const onlineDeviceCount = nodes.reduce((sum, node) => sum + (Number(node.online_device_count) || 0), 0);
+      const online = nodes.flatMap((node) =>
+        (Array.isArray(node.sources) ? node.sources : []).filter((source) => source.online)
+      );
+      el.totalValue.textContent = formatBytes(total);
+      el.uploadValue.textContent = formatBytes(upload);
+      el.downloadValue.textContent = formatBytes(download);
+      el.deviceValue.textContent = String(deviceCount);
       el.onlineValue.textContent = String(online.length);
-      el.totalDetail.textContent = node.node_name + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
-      el.uploadDetail.textContent = "占总量 " + (node.total ? ((node.upload / node.total) * 100).toFixed(1) : "0.0") + "%";
-      el.downloadDetail.textContent = "占总量 " + (node.total ? ((node.download / node.total) * 100).toFixed(1) : "0.0") + "%";
-      el.deviceDetail.textContent = "来源 IP " + (node.source_count || 0) + " 个";
+      el.totalDetail.textContent = selectionLabel() + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
+      el.uploadDetail.textContent = "占总量 " + (total ? ((upload / total) * 100).toFixed(1) : "0.0") + "%";
+      el.downloadDetail.textContent = "占总量 " + (total ? ((download / total) * 100).toFixed(1) : "0.0") + "%";
+      el.deviceDetail.textContent = "来源 IP " + sourceCount + " 个 · " + nodes.length + " 个节点";
       el.onlineDetail.textContent = online.length
-        ? online.slice(0, 2).map((source) => source.source_ip).join(" / ") + (online.length > 2 ? " 等 " + online.length + " 个" : "") + " · 在线设备 " + (node.online_device_count || 0)
+        ? online.slice(0, 2).map((source) => source.source_ip).join(" / ") + (online.length > 2 ? " 等 " + online.length + " 个" : "") + " · 在线设备 " + onlineDeviceCount
         : "近 3 分钟无上报";
     }
 
     function renderRanking() {
-      const node = selectedNode();
-      const devices = sortedDevices(node);
+      const nodes = selectedNodes();
+      const devices = sortedDevices(allDevices());
       el.rankingBody.replaceChildren();
       if (!devices.length) {
         el.rankingTable.hidden = true;
@@ -517,8 +624,8 @@
       devices.forEach((device, index) => {
         const tr = document.createElement("tr");
         tr.tabIndex = 0;
-        tr.dataset.device = device.device_id;
-        if (device.device_id === state.selectedDeviceId) tr.classList.add("selected");
+        tr.dataset.device = deviceKey(device._node_id, device.device_id);
+        if (tr.dataset.device === state.selectedDeviceKey) tr.classList.add("selected");
 
         const nameTd = makeCell();
         const nameWrap = document.createElement("div");
@@ -534,6 +641,13 @@
           onlineBadge.className = "badge online";
           onlineBadge.textContent = "在线";
           nameWrap.appendChild(onlineBadge);
+        }
+        if (nodes.length > 1) {
+          const nodeBadge = document.createElement("span");
+          nodeBadge.className = "badge node";
+          nodeBadge.textContent = device._node_name;
+          nodeBadge.title = device._node_name;
+          nameWrap.appendChild(nodeBadge);
         }
         const sub = document.createElement("span");
         sub.className = "subline";
@@ -580,7 +694,7 @@
           })(),
         );
 
-        const select = () => selectDevice(device.device_id);
+        const select = () => selectDevice(device._node_id, device.device_id);
         tr.addEventListener("click", select);
         tr.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
@@ -590,8 +704,12 @@
     }
 
     function renderDetail() {
-      const node = selectedNode();
-      const sources = node && Array.isArray(node.sources) ? node.sources.slice() : [];
+      const sources = [];
+      selectedNodes().forEach((node) => {
+        (Array.isArray(node.sources) ? node.sources : []).forEach((source) => {
+          sources.push({ ...source, _node_id: node.node_id, _node_name: node.node_name });
+        });
+      });
       el.detailBody.replaceChildren();
       if (!sources.length) {
         el.detailTable.hidden = true;
@@ -610,11 +728,12 @@
         checkTd.className = "check-col";
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.dataset.ip = source.source_ip;
-        checkbox.checked = state.selectedIps.has(source.source_ip);
+        const key = ipKey(source._node_id, source.source_ip);
+        checkbox.dataset.key = key;
+        checkbox.checked = state.selectedIps.has(key);
         checkbox.addEventListener("change", () => {
-          if (checkbox.checked) state.selectedIps.add(source.source_ip);
-          else state.selectedIps.delete(source.source_ip);
+          if (checkbox.checked) state.selectedIps.add(key);
+          else state.selectedIps.delete(key);
           updateMergeButtons();
           syncCheckAll();
         });
@@ -628,9 +747,11 @@
         sitesButton.textContent = "查看域名";
         sitesButton.addEventListener("click", (event) => {
           event.stopPropagation();
-          openIpSites(source.source_ip);
+          openIpSites(source.source_ip, source._node_id, source._node_name);
         });
         ipTd.appendChild(sitesButton);
+        const nodeTd = makeCell();
+        nodeTd.textContent = source._node_name || "—";
         const statusTd = makeCell();
         const status = document.createElement("span");
         status.className = "badge " + (source.online ? "online" : "offline");
@@ -657,6 +778,7 @@
         tr.append(
           checkTd,
           ipTd,
+          nodeTd,
           statusTd,
           geoTd,
           deviceTd,
@@ -678,12 +800,61 @@
       return site.startsWith("ip:") ? "IP · " + site.slice(3) : site;
     }
 
-    function renderSites() {
-      const node = selectedNode();
+    function aggregatedSites(nodes) {
       const siteNodes = state.summary && Array.isArray(state.summary.site_nodes)
         ? state.summary.site_nodes : [];
-      const siteNode = siteNodes.find((item) => item.node_id === (node && node.node_id));
-      const sites = siteNode && Array.isArray(siteNode.sites) ? siteNode.sites : [];
+      const byNode = new Map(siteNodes.map((item) => [item.node_id, item]));
+      const bySite = new Map();
+      nodes.forEach((node) => {
+        const nodeData = byNode.get(node.node_id);
+        (nodeData && Array.isArray(nodeData.sites) ? nodeData.sites : []).forEach((site) => {
+          let merged = bySite.get(site.site);
+          if (!merged) {
+            merged = {
+              site: site.site,
+              upload: 0,
+              download: 0,
+              total: 0,
+              active_minutes: 0,
+              connection_minutes: 0,
+              last_seen_ms: 0,
+              source_count: 0,
+              _topTotals: new Map(),
+            };
+            bySite.set(site.site, merged);
+          }
+          merged.upload += Number(site.upload) || 0;
+          merged.download += Number(site.download) || 0;
+          merged.total += Number(site.total) || 0;
+          merged.active_minutes += Number(site.active_minutes) || 0;
+          merged.connection_minutes += Number(site.connection_minutes) || 0;
+          merged.source_count += Number(site.source_count) || 0;
+          merged.last_seen_ms = Math.max(merged.last_seen_ms, Number(site.last_seen_ms) || 0);
+          (Array.isArray(site.top_sources) ? site.top_sources : []).forEach((source) => {
+            if (!source.source_ip) return;
+            const current = merged._topTotals.get(source.source_ip) || 0;
+            merged._topTotals.set(source.source_ip, current + (Number(source.total) || 0));
+          });
+          if (site.top_ip) {
+            const current = merged._topTotals.get(site.top_ip) || 0;
+            merged._topTotals.set(site.top_ip, Math.max(current, Number(site.top_ip_total) || 0));
+          }
+        });
+      });
+      return Array.from(bySite.values()).map((site) => {
+        const top = Array.from(site._topTotals.entries()).sort((a, b) => b[1] - a[1])[0] || ["", 0];
+        site.top_ip = top[0];
+        site.top_ip_total = top[1];
+        site.top_ip_share = site.total ? top[1] / site.total : 0;
+        delete site._topTotals;
+        return site;
+      }).filter((site) => site.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 200);
+    }
+
+    function renderSites() {
+      const sites = aggregatedSites(selectedNodes());
       el.siteBody.replaceChildren();
       if (!sites.length) {
         el.siteTable.hidden = true;
@@ -728,11 +899,10 @@
       });
     }
 
-    async function openIpSites(ip) {
-      const node = selectedNode();
-      if (!node) return;
+    async function openIpSites(ip, nodeId, nodeName) {
+      if (!nodeId) return;
       el.ipSitesTitle.textContent = ip + " · 访问域名";
-      el.ipSitesSubtitle.textContent = node.node_name + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时") + " · 仅显示真实域名 · 活跃=近 3 分钟";
+      el.ipSitesSubtitle.textContent = (nodeName || nodeId) + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时") + " · 仅显示真实域名 · 活跃=近 3 分钟";
       el.ipSitesBody.replaceChildren();
       el.ipSitesTable.hidden = true;
       el.ipSitesEmpty.hidden = true;
@@ -740,7 +910,7 @@
       try {
         const payload = await api("ip-sites", {
           hours: state.hours,
-          node_id: node.node_id,
+          node_id: nodeId,
           ip,
         });
         const sites = Array.isArray(payload.sites) ? payload.sites : [];
@@ -794,12 +964,13 @@
       el.resetButton.disabled = !hasSelection;
     }
 
-    async function selectDevice(deviceId, force) {
-      if (!force && state.selectedDeviceId === deviceId && state.timeline) return;
-      state.selectedDeviceId = deviceId;
+    async function selectDevice(nodeId, deviceId, force) {
+      const key = deviceKey(nodeId, deviceId);
+      if (!force && state.selectedDeviceKey === key && state.timeline) return;
+      state.selectedDeviceKey = key;
       renderRanking();
-      const node = selectedNode();
       const device = selectedDevice();
+      const node = allNodes().find((item) => item.node_id === nodeId);
       if (!node || !device) return;
       el.timelineEmpty.hidden = true;
       el.timelineContent.hidden = false;
@@ -890,26 +1061,40 @@
       }
     }
 
-    async function loadSummary(preferredDeviceId) {
-      if (state.loading) return;
+    async function loadSummary(preferredDeviceKey) {
+      if (state.loading) {
+        state.pendingRefresh = true;
+        return;
+      }
       setLoading(true);
       setError("");
       try {
+        const previousNodes = allNodes();
+        const wasAll = !state.nodeIds.size
+          || (previousNodes.length > 0 && previousNodes.every((node) => state.nodeIds.has(node.node_id)));
         const payload = await api("summary", { hours: state.hours });
         state.summary = payload;
         const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
         if (!nodes.length) {
-          state.nodeId = null;
-          state.selectedDeviceId = null;
+          state.nodeIds.clear();
+          state.selectedDeviceKey = null;
           state.timeline = null;
         } else {
-          if (!nodes.some((node) => node.node_id === state.nodeId)) state.nodeId = nodes[0].node_id;
-          const node = selectedNode();
-          const devices = node && Array.isArray(node.devices) ? node.devices : [];
-          const requested = preferredDeviceId || state.selectedDeviceId;
-          state.selectedDeviceId = devices.some((device) => device.device_id === requested)
+          if (wasAll) {
+            state.nodeIds = new Set(nodes.map((node) => node.node_id));
+          } else {
+            const valid = new Set(
+              Array.from(state.nodeIds).filter((nodeId) => nodes.some((node) => node.node_id === nodeId))
+            );
+            state.nodeIds = valid.size ? valid : new Set(nodes.map((node) => node.node_id));
+          }
+          const devices = allDevices();
+          const requested = preferredDeviceKey || state.selectedDeviceKey;
+          state.selectedDeviceKey = devices.some(
+            (device) => deviceKey(device._node_id, device.device_id) === requested
+          )
             ? requested
-            : (devices[0] ? devices[0].device_id : null);
+            : (devices[0] ? deviceKey(devices[0]._node_id, devices[0].device_id) : null);
         }
         state.selectedIps.clear();
         renderNodePicker();
@@ -917,8 +1102,10 @@
         renderRanking();
         renderDetail();
         renderSites();
-        if (state.selectedDeviceId) await selectDevice(state.selectedDeviceId, true);
-        else {
+        const device = selectedDevice();
+        if (device) {
+          await selectDevice(device._node_id, device.device_id, true);
+        } else {
           state.timeline = null;
           renderTimeline();
           el.timelineSubtitle.textContent = "选择设备后显示";
@@ -931,37 +1118,59 @@
         el.refreshState.textContent = "刷新失败";
       } finally {
         setLoading(false);
+        if (state.pendingRefresh) {
+          state.pendingRefresh = false;
+          loadSummary();
+        }
       }
     }
 
     async function mergeSelected() {
-      const node = selectedNode();
-      const ips = Array.from(state.selectedIps);
-      if (!node || !ips.length) return;
+      const selected = Array.from(state.selectedIps).map((key) => {
+        const separator = key.indexOf("|");
+        return { nodeId: key.slice(0, separator), ip: key.slice(separator + 1) };
+      });
+      const nodeIds = new Set(selected.map((item) => item.nodeId));
+      if (nodeIds.size !== 1) {
+        setError("一次只能归并同一节点下的来源 IP，请按节点分批操作。");
+        return;
+      }
+      const nodeId = selected[0].nodeId;
+      const ips = selected.map((item) => item.ip);
+      if (!nodeId || !ips.length) return;
       const label = el.deviceLabel.value.trim();
       setError("");
       try {
         const result = await api("device-map", {
-          node_id: node.node_id,
+          node_id: nodeId,
           action: "merge",
           label: label || "手动设备",
           ips: ips.join(","),
         });
         el.deviceLabel.value = "";
-        await loadSummary(result.device_id);
+        await loadSummary(deviceKey(nodeId, result.device_id));
       } catch (error) {
         setError("设备归并失败：" + error.message);
       }
     }
 
     async function resetSelected() {
-      const node = selectedNode();
-      const ips = Array.from(state.selectedIps);
-      if (!node || !ips.length) return;
+      const selected = Array.from(state.selectedIps).map((key) => {
+        const separator = key.indexOf("|");
+        return { nodeId: key.slice(0, separator), ip: key.slice(separator + 1) };
+      });
+      const nodeIds = new Set(selected.map((item) => item.nodeId));
+      if (nodeIds.size !== 1) {
+        setError("一次只能恢复同一节点下的来源 IP，请按节点分批操作。");
+        return;
+      }
+      const nodeId = selected[0].nodeId;
+      const ips = selected.map((item) => item.ip);
+      if (!nodeId || !ips.length) return;
       setError("");
       try {
         await api("device-map", {
-          node_id: node.node_id,
+          node_id: nodeId,
           action: "reset",
           ips: ips.join(","),
         });
@@ -981,11 +1190,31 @@
       loadSummary();
     });
 
-    el.nodeSelect.addEventListener("change", () => {
-      state.nodeId = el.nodeSelect.value;
-      state.selectedDeviceId = null;
+    el.nodeTrigger.addEventListener("click", () => {
+      const willOpen = el.nodeMenu.hidden;
+      el.nodeMenu.hidden = !willOpen;
+      el.nodeTrigger.setAttribute("aria-expanded", String(willOpen));
+    });
+
+    el.nodeSelectAll.addEventListener("click", () => {
+      state.nodeIds = new Set(allNodes().map((node) => node.node_id));
+      state.selectedDeviceKey = null;
       state.selectedIps.clear();
       loadSummary();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!el.nodePicker.contains(event.target)) {
+        el.nodeMenu.hidden = true;
+        el.nodeTrigger.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        el.nodeMenu.hidden = true;
+        el.nodeTrigger.setAttribute("aria-expanded", "false");
+      }
     });
 
     el.refreshButton.addEventListener("click", () => loadSummary());
@@ -1002,8 +1231,8 @@
       const boxes = Array.from(el.detailBody.querySelectorAll("input[type=checkbox]"));
       boxes.forEach((box) => {
         box.checked = el.checkAll.checked;
-        if (box.checked) state.selectedIps.add(box.dataset.ip);
-        else state.selectedIps.delete(box.dataset.ip);
+        if (box.checked) state.selectedIps.add(box.dataset.key);
+        else state.selectedIps.delete(box.dataset.key);
       });
       updateMergeButtons();
     });
