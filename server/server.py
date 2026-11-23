@@ -141,6 +141,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS nodes (
                 node_id TEXT PRIMARY KEY,
                 node_name TEXT NOT NULL,
+                metric_mode TEXT NOT NULL DEFAULT 'traffic',
                 first_seen_ms INTEGER NOT NULL,
                 last_seen_ms INTEGER NOT NULL
             );
@@ -201,6 +202,13 @@ def init_db() -> None:
         if 'source' not in ip_geo_columns:
             conn.execute(
                 "ALTER TABLE ip_geo ADD COLUMN source TEXT NOT NULL DEFAULT ''"
+            )
+        node_columns = {
+            row[1] for row in conn.execute('PRAGMA table_info(nodes)')
+        }
+        if 'metric_mode' not in node_columns:
+            conn.execute(
+                "ALTER TABLE nodes ADD COLUMN metric_mode TEXT NOT NULL DEFAULT 'traffic'"
             )
         conn.commit()
         DB_PATH.chmod(0o600)
@@ -518,7 +526,7 @@ def is_noise_site(site: str) -> bool:
 def validate_ingest(
     payload: object, current_ms: int,
 ) -> tuple[
-    str, str,
+    str, str, str,
     list[tuple[int, str, int, int, int, int]],
     list[tuple[int, str, str, int, int, int, int]],
 ]:
@@ -530,6 +538,9 @@ def validate_ingest(
         raise ValueError('invalid node_id')
     if not node_name or len(node_name) > 120:
         raise ValueError('invalid node_name')
+    metric_mode = str(payload.get('metric_mode') or 'traffic').strip().lower()
+    if metric_mode not in ('traffic', 'connections'):
+        raise ValueError('invalid metric_mode')
     raw_rows = payload.get('rows') or []
     if not isinstance(raw_rows, list):
         raise ValueError('rows must be an array')
@@ -579,12 +590,12 @@ def validate_ingest(
         site_rows.append((
             minute_ms, ip, site, up_bytes, down_bytes, connections, last_seen_ms,
         ))
-    return node_id, node_name, rows, site_rows
+    return node_id, node_name, metric_mode, rows, site_rows
 
 
 def ingest_rows(payload: object) -> int:
     current_ms = now_ms()
-    node_id, node_name, rows, site_rows = validate_ingest(payload, current_ms)
+    node_id, node_name, metric_mode, rows, site_rows = validate_ingest(payload, current_ms)
     if not rows and not site_rows:
         return 0
     conn = db_connect()
@@ -592,14 +603,15 @@ def ingest_rows(payload: object) -> int:
         with conn:
             conn.execute(
                 '''
-                INSERT INTO nodes(node_id, node_name, first_seen_ms, last_seen_ms)
-                VALUES(?, ?, ?, ?)
+                INSERT INTO nodes(node_id, node_name, metric_mode, first_seen_ms, last_seen_ms)
+                VALUES(?, ?, ?, ?, ?)
                 ON CONFLICT(node_id) DO UPDATE SET
                     node_name=excluded.node_name,
+                    metric_mode=excluded.metric_mode,
                     first_seen_ms=MIN(nodes.first_seen_ms, excluded.first_seen_ms),
                     last_seen_ms=MAX(nodes.last_seen_ms, excluded.last_seen_ms)
                 ''',
-                (node_id, node_name, current_ms, current_ms),
+                (node_id, node_name, metric_mode, current_ms, current_ms),
             )
             conn.executemany(
                 '''
@@ -796,6 +808,9 @@ def make_device(
     download = sum(int(item['download']) for item in sources)
     active_minutes = sum(int(item['active_minutes']) for item in sources)
     connection_minutes = sum(int(item['connection_minutes']) for item in sources)
+    connections = sum(
+        int(item.get('connections', item['connection_minutes'])) for item in sources
+    )
     for source in sources:
         source['device_id'] = device_id
         source['device_label'] = label
@@ -818,6 +833,7 @@ def make_device(
         'download': download,
         'total': upload + download,
         'active_minutes': active_minutes,
+        'connections': connections,
         'connection_minutes': connection_minutes,
         'first_seen_ms': min(int(item['first_seen_ms']) for item in sources),
         'last_seen_ms': max(int(item['last_seen_ms']) for item in sources),
@@ -838,13 +854,17 @@ def site_summary(hours: int) -> list[dict]:
             row['node_id']: row['node_name']
             for row in conn.execute('SELECT node_id, node_name FROM nodes')
         }
+        node_modes = {
+            row['node_id']: row['metric_mode']
+            for row in conn.execute('SELECT node_id, metric_mode FROM nodes')
+        }
         rows = conn.execute(
             '''
             SELECT node_id, site, source_ip,
                    SUM(up_bytes) AS up_bytes,
                    SUM(down_bytes) AS down_bytes,
                    COUNT(*) AS active_minutes,
-                   SUM(connections) AS connection_minutes,
+                   SUM(connections) AS connections,
                    MAX(last_seen_ms) AS last_seen_ms
             FROM site_minute_agg
             WHERE minute_ms >= ?
@@ -863,6 +883,7 @@ def site_summary(hours: int) -> list[dict]:
         node = nodes.setdefault(node_id, {
             'node_id': node_id,
             'node_name': node_names.get(node_id, node_id),
+            'metric_mode': node_modes.get(node_id, 'traffic'),
             'sites': [],
             'site_count': 0,
         })
@@ -875,6 +896,7 @@ def site_summary(hours: int) -> list[dict]:
                 'download': 0,
                 'total': 0,
                 'active_minutes': 0,
+                'connections': 0,
                 'connection_minutes': 0,
                 'last_seen_ms': 0,
                 'source_count': 0,
@@ -883,13 +905,15 @@ def site_summary(hours: int) -> list[dict]:
             node['sites'].append(site)
         upload = int(row['up_bytes'])
         download = int(row['down_bytes'])
+        connections = int(row['connections'])
         source = {
             'source_ip': row['source_ip'],
             'upload': upload,
             'download': download,
             'total': upload + download,
             'active_minutes': int(row['active_minutes']),
-            'connection_minutes': int(row['connection_minutes']),
+            'connections': connections,
+            'connection_minutes': connections,
             'last_seen_ms': int(row['last_seen_ms']),
         }
         site['sources'].append(source)
@@ -897,33 +921,47 @@ def site_summary(hours: int) -> list[dict]:
         site['download'] += download
         site['total'] += upload + download
         site['active_minutes'] += source['active_minutes']
-        site['connection_minutes'] += source['connection_minutes']
+        site['connections'] += connections
+        site['connection_minutes'] += connections
         site['last_seen_ms'] = max(site['last_seen_ms'], source['last_seen_ms'])
         site['source_count'] += 1
 
     result = []
     for node in nodes.values():
         for site in node['sites']:
+            connection_mode = int(site['total']) <= 0 and int(site['connections']) > 0
+            metric_key = 'connections' if connection_mode else 'total'
             site['sources'].sort(
-                key=lambda item: (int(item['total']), int(item['last_seen_ms'])),
+                key=lambda item: (int(item[metric_key]), int(item['last_seen_ms'])),
                 reverse=True,
             )
             top = site['sources'][0]
             site['top_ip'] = top['source_ip']
-            site['top_ip_total'] = int(top['total'])
-            site['top_ip_share'] = (top['total'] / site['total']) if site['total'] else 0
+            site['top_ip_total'] = int(top[metric_key])
+            metric_total = int(site[metric_key])
+            site['top_ip_share'] = (top[metric_key] / metric_total) if metric_total else 0
             site['top_ip_last_seen_ms'] = int(top['last_seen_ms'])
             site['top_sources'] = site['sources'][:5]
+            site['metric_mode'] = 'connections' if connection_mode else 'traffic'
             site.pop('sources', None)
-        node['sites'].sort(key=lambda item: int(item['total']), reverse=True)
+        def node_metric(site):
+            return int(site['connections']) if site['metric_mode'] == 'connections' else int(site['total'])
+
+        node['sites'].sort(key=node_metric, reverse=True)
         node['sites'] = [
             site for site in node['sites']
-            if int(site['total']) > 0
+            if int(site['total']) > 0 or int(site['connections']) > 0
         ][:200]
         node['site_count'] = len(node['sites'])
         if node['sites']:
             result.append(node)
-    result.sort(key=lambda item: sum(site['total'] for site in item['sites']), reverse=True)
+    result.sort(
+        key=lambda item: sum(
+            int(site['connections']) if site['metric_mode'] == 'connections' else int(site['total'])
+            for site in item['sites']
+        ),
+        reverse=True,
+    )
     return result
 
 
@@ -939,7 +977,7 @@ def ip_sites(hours: int, node_id: str, ip: str) -> dict:
                    SUM(up_bytes) AS up_bytes,
                    SUM(down_bytes) AS down_bytes,
                    COUNT(*) AS active_minutes,
-                   SUM(connections) AS connection_minutes,
+                   SUM(connections) AS connections,
                    MAX(last_seen_ms) AS last_seen_ms
             FROM site_minute_agg
             WHERE node_id = ? AND source_ip = ? AND minute_ms >= ?
@@ -958,7 +996,8 @@ def ip_sites(hours: int, node_id: str, ip: str) -> dict:
         upload = int(row['up_bytes'])
         download = int(row['down_bytes'])
         total = upload + download
-        if total <= 0:
+        connections = int(row['connections'])
+        if total <= 0 and connections <= 0:
             continue
         sites.append({
             'site': row['site'],
@@ -967,13 +1006,15 @@ def ip_sites(hours: int, node_id: str, ip: str) -> dict:
             'download': download,
             'total': total,
             'active_minutes': int(row['active_minutes']),
-            'connection_minutes': int(row['connection_minutes']),
+            'connections': connections,
+            'connection_minutes': connections,
             'last_seen_ms': int(row['last_seen_ms']),
+            'metric_mode': 'connections' if total <= 0 else 'traffic',
         })
     sites.sort(
         key=lambda item: (
             not item['active'],
-            -int(item['total']),
+            -int(item['connections']) if item['metric_mode'] == 'connections' else -int(item['total']),
             -int(item['last_seen_ms']),
         )
     )
@@ -995,7 +1036,9 @@ def summary(hours: int) -> dict:
     try:
         node_rows = {
             row['node_id']: row
-            for row in conn.execute('SELECT node_id, node_name, first_seen_ms, last_seen_ms FROM nodes')
+            for row in conn.execute(
+                'SELECT node_id, node_name, metric_mode, first_seen_ms, last_seen_ms FROM nodes'
+            )
         }
         rows = conn.execute(
             '''
@@ -1003,7 +1046,7 @@ def summary(hours: int) -> dict:
                    SUM(up_bytes) AS up_bytes,
                    SUM(down_bytes) AS down_bytes,
                    COUNT(*) AS active_minutes,
-                   SUM(connections) AS connection_minutes,
+                   SUM(connections) AS connections,
                    MIN(minute_ms) AS first_seen_ms,
                    MAX(last_seen_ms) AS last_seen_ms
             FROM minute_agg
@@ -1029,7 +1072,8 @@ def summary(hours: int) -> dict:
                 'download': int(row['down_bytes']),
                 'total': int(row['up_bytes']) + int(row['down_bytes']),
                 'active_minutes': int(row['active_minutes']),
-                'connection_minutes': int(row['connection_minutes']),
+                'connections': int(row['connections']),
+                'connection_minutes': int(row['connections']),
                 'first_seen_ms': int(row['first_seen_ms']),
                 'last_seen_ms': int(row['last_seen_ms']),
                 'online': int(row['last_seen_ms']) >= online_cutoff_ms,
@@ -1072,20 +1116,23 @@ def summary(hours: int) -> dict:
                 node_id, 'auto:' + digest, '', False, confidence, cluster_sources,
             ))
 
-        devices.sort(key=lambda item: int(item['total']), reverse=True)
+        device_metric = 'connections' if meta and meta['metric_mode'] == 'connections' else 'total'
+        devices.sort(key=lambda item: int(item[device_metric]), reverse=True)
         for index, device in enumerate(devices, start=1):
             if not device['manual']:
                 device['label'] = '疑似设备 ' + str(index)
                 for source in device['ips']:
                     source['device_label'] = device['label']
             device['rank'] = index
-        node_sources.sort(key=lambda item: int(item['total']), reverse=True)
+        node_sources.sort(key=lambda item: int(item[device_metric]), reverse=True)
         nodes[node_id] = {
             'node_id': node_id,
             'node_name': meta['node_name'] if meta else node_id,
+            'metric_mode': meta['metric_mode'] if meta else 'traffic',
             'upload': sum(int(item['upload']) for item in node_sources),
             'download': sum(int(item['download']) for item in node_sources),
             'total': sum(int(item['total']) for item in node_sources),
+            'connections': sum(int(item['connections']) for item in node_sources),
             'source_count': len(node_sources),
             'device_count': len(devices),
             'online_source_count': sum(1 for item in node_sources if item.get('online')),
@@ -1094,7 +1141,13 @@ def summary(hours: int) -> dict:
             'devices': devices,
         }
 
-    ordered = sorted(nodes.values(), key=lambda item: item['total'], reverse=True)
+    ordered = sorted(
+        nodes.values(),
+        key=lambda item: int(item['connections'])
+        if item.get('metric_mode') == 'connections'
+        else int(item['total']),
+        reverse=True,
+    )
     return {
         'hours': hours,
         'window_start_ms': start_ms,
@@ -1131,6 +1184,7 @@ def timeline(hours: int, node_id: str, ips: list[str]) -> dict:
             SELECT (minute_ms - (minute_ms % ?)) AS bucket_ms,
                    SUM(up_bytes) AS up_bytes,
                    SUM(down_bytes) AS down_bytes,
+                   SUM(connections) AS connections,
                    COUNT(*) AS active_minutes
             FROM minute_agg
             WHERE node_id = ? AND source_ip IN ({placeholders}) AND minute_ms >= ?
@@ -1148,6 +1202,7 @@ def timeline(hours: int, node_id: str, ips: list[str]) -> dict:
             'download': int(row['down_bytes']),
             'total': int(row['up_bytes']) + int(row['down_bytes']),
             'active_minutes': int(row['active_minutes']),
+            'connections': int(row['connections']),
         }
         for row in rows
     ]

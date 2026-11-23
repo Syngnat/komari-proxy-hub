@@ -1,0 +1,10 @@
+{
+  "mode": "xray",
+  "access_log": "/var/log/xray/access.log",
+  "xray_log_start_at_end": true,
+  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
+  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "node_id": "xray-01",
+  "node_name": "Xray-01",
+  "db_path": "/var/lib/proxy-traffic/traffic.db"
+}

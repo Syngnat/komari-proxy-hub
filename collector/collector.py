@@ -20,12 +20,18 @@ DEFAULT_DB = Path('/var/lib/proxy-traffic/traffic.db')
 POLL_SECONDS = 1.0
 UPLOAD_SECONDS = 30.0
 DEFAULT_PROTOCOLS = ('*',)
+DEFAULT_MODE = 'clash'
 FLOW_RETENTION_SECONDS = 24 * 60 * 60
 MINUTE_RETENTION_SECONDS = 30 * 24 * 60 * 60
 MINUTE_DETAIL_SECONDS = 2 * 24 * 60 * 60
 ACTIVE_RETENTION_SECONDS = 10 * 60
 MAX_BATCH_ROWS = 2000
 SITE_RE = re.compile(r'^[a-z0-9._:-]{1,253}$')
+ACCESS_LOG_RE = re.compile(
+    r'^(?P<ts>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})(?:\.\d+)?\s+'
+    r'from\s+(?P<src>\S+)\s+accepted\s+(?P<dest>\S+)\s+'
+    r'(?:\[[^\]]*\])?(?:\s+email:\s*(?P<email>\S+))?'
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +44,15 @@ stop_event = threading.Event()
 
 def load_config() -> dict:
     config = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
-    required = ('clash_api', 'clash_secret_file', 'ingest_url', 'node_id', 'node_name')
+    mode = str(config.get('mode') or DEFAULT_MODE).strip().lower()
+    if mode not in ('clash', 'xray'):
+        raise RuntimeError('mode must be "clash" or "xray"')
+    config['mode'] = mode
+    required = ['ingest_url', 'node_id', 'node_name']
+    if mode == 'clash':
+        required.extend(['clash_api', 'clash_secret_file'])
+    else:
+        required.append('access_log')
     missing = [key for key in required if not config.get(key)]
     if missing:
         raise RuntimeError(f'missing config keys: {", ".join(missing)}')
@@ -175,6 +189,52 @@ def normalize_site(value: object, destination_ip: object = None) -> str | None:
     if not SITE_RE.fullmatch(site):
         return None
     return site
+
+
+def split_endpoint(value: str) -> tuple[str, str]:
+    value = str(value or '').strip()
+    if value.startswith('['):
+        end = value.find(']')
+        if end < 0:
+            return value, ''
+        host = value[1:end]
+        rest = value[end + 1:]
+        port = rest[1:] if rest.startswith(':') else ''
+        return host, port
+    host, separator, port = value.rpartition(':')
+    if not separator:
+        return value, ''
+    return host, port
+
+
+def parse_xray_access_line(line: str) -> tuple[int, str, str | None] | None:
+    line = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
+    match = ACCESS_LOG_RE.match(line)
+    if not match:
+        return None
+    source = match.group('src')
+    if source.startswith(('tcp:', 'udp:')):
+        source = source.split(':', 1)[1]
+    source_host, _ = split_endpoint(source)
+    source_ip = valid_source(source_host)
+    if not source_ip:
+        return None
+    destination = match.group('dest')
+    if destination.startswith(('tcp:', 'udp:')):
+        destination = destination.split(':', 1)[1]
+    destination_host, _ = split_endpoint(destination)
+    try:
+        address = ipaddress.ip_address(destination_host)
+        site = 'ip:' + address.compressed if address.is_global else None
+    except ValueError:
+        site = normalize_site(destination_host)
+    try:
+        timestamp = dt.datetime.strptime(
+            match.group('ts'), '%Y/%m/%d %H:%M:%S'
+        ).timestamp() * 1000
+    except ValueError:
+        timestamp = int(time.time() * 1000)
+    return int(timestamp), source_ip, site
 
 
 def fetch_connections(api_url: str, secret: str) -> list[dict]:
@@ -330,6 +390,7 @@ def post_batch(config: dict, rows: list[list[int | str]], site_rows: list[list[i
             'node_id': config['node_id'],
             'node_name': config['node_name'],
             'generated_at': int(time.time() * 1000),
+            'metric_mode': 'connections' if config['mode'] == 'xray' else 'traffic',
             'rows': rows,
             'site_rows': site_rows,
         },
@@ -350,6 +411,40 @@ def post_batch(config: dict, rows: list[list[int | str]], site_rows: list[list[i
         if response.status != 200:
             raise RuntimeError(f'ingest returned {response.status}')
         response.read(256)
+
+
+def record_xray_events(
+    conn: sqlite3.Connection,
+    events: list[tuple[int, str, str | None]],
+) -> None:
+    if not events:
+        return
+    with conn:
+        for timestamp, source_ip, site in events:
+            minute = (timestamp // 60000) * 60000
+            conn.execute(
+                '''
+                INSERT INTO minute_stats(
+                    minute, source_ip, up_bytes, down_bytes, connections, last_seen
+                ) VALUES(?, ?, 0, 0, 1, ?)
+                ON CONFLICT(minute, source_ip) DO UPDATE SET
+                    connections=minute_stats.connections + 1,
+                    last_seen=MAX(minute_stats.last_seen, excluded.last_seen)
+                ''',
+                (minute, source_ip, timestamp),
+            )
+            if site:
+                conn.execute(
+                    '''
+                    INSERT INTO site_stats(
+                        minute, source_ip, site, up_bytes, down_bytes, connections, last_seen
+                    ) VALUES(?, ?, ?, 0, 0, 1, ?)
+                    ON CONFLICT(minute, source_ip, site) DO UPDATE SET
+                        connections=site_stats.connections + 1,
+                        last_seen=MAX(site_stats.last_seen, excluded.last_seen)
+                    ''',
+                    (minute, source_ip, site, timestamp),
+                )
 
 
 def upload_loop(config: dict, db_path: Path) -> None:
@@ -440,6 +535,62 @@ def poll_loop(config: dict, db_path: Path) -> None:
     conn.close()
 
 
+def xray_log_loop(config: dict, db_path: Path) -> None:
+    log_path = Path(config['access_log'])
+    start_at_end = bool(config.get('xray_log_start_at_end', True))
+    conn = open_db(db_path)
+    position = 0
+    inode = None
+    first_open = True
+    startup_checked = False
+    events: list[tuple[int, str, str | None]] = []
+    next_prune = time.monotonic() + 300
+    log.info('xray access log watcher starting path=%s', log_path)
+    while not stop_event.is_set():
+        try:
+            stat = log_path.stat()
+            if inode != stat.st_ino or stat.st_size < position:
+                inode = stat.st_ino
+                if first_open and not startup_checked and start_at_end:
+                    position = stat.st_size
+                else:
+                    position = 0
+                startup_checked = True
+            with log_path.open('r', encoding='utf-8', errors='replace') as handle:
+                handle.seek(position)
+                while not stop_event.is_set():
+                    line_start = handle.tell()
+                    line = handle.readline()
+                    if not line:
+                        break
+                    if not line.endswith('\n'):
+                        handle.seek(line_start)
+                        break
+                    position = handle.tell()
+                    parsed = parse_xray_access_line(line)
+                    if parsed:
+                        events.append(parsed)
+                    if len(events) >= 200:
+                        record_xray_events(conn, events)
+                        events.clear()
+            if events:
+                record_xray_events(conn, events)
+                events.clear()
+            first_open = False
+        except FileNotFoundError:
+            startup_checked = True
+        except (OSError, sqlite3.Error) as exc:
+            log.warning('xray log read failed: %s', exc)
+        if time.monotonic() >= next_prune:
+            try:
+                prune(conn, int(time.time() * 1000))
+            except sqlite3.Error as exc:
+                log.warning('prune failed: %s', exc)
+            next_prune = time.monotonic() + 300
+        stop_event.wait(POLL_SECONDS)
+    conn.close()
+
+
 def handle_signal(_signum, _frame) -> None:
     stop_event.set()
 
@@ -450,11 +601,17 @@ def main() -> None:
     db_path = Path(config.get('db_path') or DEFAULT_DB)
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
-    log.info('collector starting node=%s db=%s', config['node_id'], db_path)
+    log.info(
+        'collector starting node=%s mode=%s db=%s',
+        config['node_id'], config['mode'], db_path,
+    )
     uploader = threading.Thread(target=upload_loop, args=(config, db_path), name='uploader', daemon=True)
     uploader.start()
     try:
-        poll_loop(config, db_path)
+        if config['mode'] == 'xray':
+            xray_log_loop(config, db_path)
+        else:
+            poll_loop(config, db_path)
     finally:
         stop_event.set()
         uploader.join(timeout=5)

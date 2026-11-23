@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：1.7.0
+> 当前版本：1.8.0
 
 ## 功能
 
@@ -50,7 +50,8 @@ Komari 管理页 iframe（traffic.html）
 
 - Komari `>= 1.6.0`
 - Python `>= 3.10`
-- 节点使用 Clash API 兼容内核，并开启 `/connections` 接口
+- Clash 模式：内核开启 `/connections` 接口
+- Xray 模式：开启 access log，并保证采集器可读
 - 可选：`maxminddb` Python 包和 GeoLite2 / DB-IP 数据库
 - 可选：IPinfo token（免费额度有限）
 
@@ -60,10 +61,10 @@ Komari 管理页 iframe（traffic.html）
 |---|---|---|
 | sing-box | 完整：来源 IP + 域名 + 上下行字节数 | Clash API `/connections`，已实测 |
 | mihomo / Clash.Meta | 完整：来源 IP + 域名 + 上下行字节数 | Clash API `/connections`，字段兼容 |
-| Xray / v2ray-core | 不完整：只有 access log 的 IP/域名建连记录，或 Stats API 的用户/节点总量 | 无法直接提供每 IP、每域名的精确流量 |
+| Xray / v2ray-core | 降级：来源 IP + 域名 + 连接次数 + 活跃时间 | `mode: "xray"`，读取 access log |
 | Hysteria2 | 不完整：只有 `/traffic` 的用户总流量和 `/online` 在线设备 | 没有目标域名和每 IP 流量 |
 
-Xray 的 access log 记录“谁在什么时候连接了哪个域名”，但不记录该连接的上下行字节数；Stats API 只按 inbound/user 汇总。因此，Xray 作为入口内核时无法保持本页面的完整排行粒度。
+Xray 的 access log 记录“谁在什么时候连接了哪个域名”，但不记录该连接的上下行字节数；Stats API 只按 inbound/user 汇总。因此，Xray 作为入口内核时只能使用降级模式，页面会明确显示“连接次数”，不会伪造流量。
 
 如果需要给 Xray 生态保留完整粒度，推荐把入口换成 mihomo 或 sing-box：
 
@@ -153,6 +154,7 @@ sudo install -m 0640 -o root -g proxy-traffic collector/config.example.json /etc
 
 ```json
 {
+  "mode": "clash",
   "clash_api": "http://127.0.0.1:9090",
   "clash_secret_file": "/etc/proxy-traffic/clash-secret",
   "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
@@ -181,6 +183,36 @@ sudo journalctl -u proxy-traffic-collector -f
 ```
 
 `node_id` 是稳定且唯一的节点标识，发布后不要随意修改，否则历史数据会归到新节点。`node_name` 是页面显示名称。
+
+#### Xray 降级模式
+
+Xray 节点使用 access log 模式，不需要 Clash API。先确保 Xray 开启访问日志：
+
+```json
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "loglevel": "warning"
+  }
+}
+```
+
+采集器配置示例见 `collector/config.xray.example.json`：
+
+```json
+{
+  "mode": "xray",
+  "access_log": "/var/log/xray/access.log",
+  "xray_log_start_at_end": true,
+  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
+  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "node_id": "xray-01",
+  "node_name": "Xray-01",
+  "db_path": "/var/lib/proxy-traffic/traffic.db"
+}
+```
+
+该模式只能统计 access log 中出现的来源 IP、目标域名、连接次数和活跃时间；上下行字节数为 0，页面会自动切换为“连接次数”视图。要恢复完整流量粒度，请使用 mihomo/sing-box 入口。
 
 #### 多节点
 
@@ -275,24 +307,28 @@ docker restart komari
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `clash_api` | 是 | sing-box Clash API 地址 |
-| `clash_secret_file` | 是 | Clash API secret 文件 |
+| `mode` | 否 | `clash`（默认，sing-box/mihomo）或 `xray` |
+| `clash_api` | Clash 模式必填 | Clash API 地址 |
+| `clash_secret_file` | Clash 模式必填 | Clash API secret 文件 |
+| `access_log` | Xray 模式必填 | Xray access log 路径 |
+| `xray_log_start_at_end` | 否 | Xray 首次启动是否从文件末尾开始，默认 `true` |
 | `ingest_url` | 是 | 聚合服务的 ingest 地址 |
 | `ingest_token` | 二选一 | 直接填写 token，不推荐 |
 | `ingest_token_file` | 二选一 | token 文件路径，推荐 |
-| `protocols` | 否 | 协议白名单；默认 `["*"]` 表示全部协议，也可填 `["anytls", "vless"]` 等 |
+| `protocols` | 否 | 仅 Clash 模式使用；默认 `["*"]` 表示全部协议，也可填 `["anytls", "vless"]` 等 |
 | `node_id` | 是 | 唯一、稳定、最多 64 字符 |
 | `node_name` | 是 | 页面显示名，最多 120 字符 |
 | `db_path` | 否 | 本地队列数据库，默认 `/var/lib/proxy-traffic/traffic.db` |
 
 ## 统计口径与限制
 
-- **只采集聚合元数据**：来源 IP、上下行字节数、连接数、连接开始/结束时间、目标主机名或 IP。不采集 UA、URL 路径、查询参数、Referer 或页面内容。
+- **Clash 模式采集聚合元数据**：来源 IP、上下行字节数、连接数、连接开始/结束时间、目标主机名或 IP。不采集 UA、URL 路径、查询参数、Referer 或页面内容。
+- **Xray 降级模式只采集 access log 事件**：来源 IP、目标域名、连接次数和活跃时间；没有每域名精确流量。access log 必须为文本文件并开启 `log.access`。
 - **共享密码无法可靠区分设备**：多个用户共用同一个代理密码时，只能按来源 IP 和设备行为推断，不能做严格身份归属。
 - **“疑似设备”是启发式**：依据同国家 / ASN、地区一致、活跃分钟不重叠和 IP 切换间隔聚类，必须人工确认。IP 变化频繁或多人同时在线时可能误合并。设备归并只在单个节点内生效。
 - **链式代理有观测边界**：入口节点看到的是下游入口 IP。若下游再做代理，入口节点看不到隧道内的最终域名。
 - **地区可能漂移**：IPinfo 和 GeoIP 数据库的城市级结果只作参考，尤其是移动网络、Anycast 和企业出口。
-- **默认统计全部协议**：采集器会统计 Clash API 中所有具有公网来源 IP 的连接；如需排除某些协议，可把 `protocols` 设成前缀白名单，例如 `["anytls", "vless"]`。
+- **Clash 模式默认统计全部协议**：采集器会统计 Clash API 中所有具有公网来源 IP 的连接；如需排除某些协议，可把 `protocols` 设成前缀白名单，例如 `["anytls", "vless"]`。Xray 模式以 access log 中实际出现的 accepted 连接为准。
 - **在线窗口为 3 分钟**：最近 3 分钟有上报视为在线；不是实时 TCP 连接数。
 - **目标站点只保留主机名 / IP**：不会还原完整 URL。
 - **数据保留 30 天**：聚合服务自动清理超过 30 天的分钟数据。

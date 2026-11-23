@@ -5,11 +5,11 @@
   },
   "short": "proxy-traffic",
   "description": {
-    "zh_CN": "按来源 IP 汇总代理流量，支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议，显示地区、在线状态、疑似设备、目标站点和每个 IP 的域名明细。",
-    "en": "Aggregates proxy traffic by source IP for AnyTLS, VLESS, VMess, Trojan, Shadowsocks, Hysteria, TUIC and more, with region, online state, inferred devices, target sites, and per-IP domain details."
+    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数、域名和活跃时间。",
+    "en": "Aggregates proxy traffic by source IP. Clash-compatible cores provide exact traffic; Xray access logs provide connection counts, domains and activity."
   },
   "author": "Syngnat",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",

@@ -91,6 +91,7 @@
     .node-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .notice { margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 13px; }
     .notice strong { color: var(--text); }
+    .notice.mode-note { border-color: rgba(245, 158, 11, .35); background: rgba(245, 158, 11, .09); color: var(--text); }
     .error { display: none; margin-bottom: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(192, 59, 70, .28); background: rgba(192, 59, 70, .09); color: var(--danger); font-size: 13px; }
     .error.visible { display: block; }
     .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
@@ -239,12 +240,15 @@
     <div class="notice">
       <strong>统计口径：</strong>当前接入 <span id="scopeNodes">采集器上报的代理节点</span>。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
     </div>
+    <div class="notice mode-note" id="modeNotice" hidden>
+      <strong>Xray 降级模式：</strong>当前选择包含 Xray 节点，只统计连接次数和访问域名，不统计精确流量。Xray 原生 API 不提供每连接上下行字节数。
+    </div>
     <div class="error" id="errorBanner" role="alert"></div>
 
     <section class="cards" aria-label="流量汇总">
-      <article class="card"><div class="card-label">总流量</div><div class="card-value" id="totalValue">—</div><div class="card-detail" id="totalDetail">等待采集</div></article>
-      <article class="card"><div class="card-label">上传</div><div class="card-value" id="uploadValue">—</div><div class="card-detail" id="uploadDetail">客户端发往节点</div></article>
-      <article class="card"><div class="card-label">下载</div><div class="card-value" id="downloadValue">—</div><div class="card-detail" id="downloadDetail">节点返回客户端</div></article>
+      <article class="card"><div class="card-label" id="totalLabel">总流量</div><div class="card-value" id="totalValue">—</div><div class="card-detail" id="totalDetail">等待采集</div></article>
+      <article class="card"><div class="card-label" id="uploadLabel">上传</div><div class="card-value" id="uploadValue">—</div><div class="card-detail" id="uploadDetail">客户端发往节点</div></article>
+      <article class="card"><div class="card-label" id="downloadLabel">下载</div><div class="card-value" id="downloadValue">—</div><div class="card-detail" id="downloadDetail">节点返回客户端</div></article>
       <article class="card"><div class="card-label">设备 / 来源 IP</div><div class="card-value" id="deviceValue">—</div><div class="card-detail" id="deviceDetail">等待采集</div></article>
       <article class="card label-online"><div class="card-label">在线 IP</div><div class="card-value" id="onlineValue">—</div><div class="card-detail" id="onlineDetail">近 3 分钟有上报</div></article>
     </section>
@@ -262,7 +266,7 @@
         <div class="table-wrap">
           <div class="empty" id="rankingEmpty"><div><strong>还没有聚合数据</strong>采集器首次启动会先建立流量基线，随后新的连接流量会在约 30 秒内出现。</div></div>
           <table id="rankingTable" hidden>
-            <thead><tr><th>设备</th><th>地区</th><th>最近 IP</th><th class="num">总流量</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
+            <thead><tr><th>设备</th><th>地区</th><th>最近 IP</th><th class="num" id="rankingMetricHeader">总流量</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
             <tbody id="rankingBody"></tbody>
           </table>
         </div>
@@ -297,7 +301,7 @@
       </div>
       <div class="table-wrap detail-wrap">
         <table id="detailTable" hidden>
-          <thead><tr><th class="check-col"><input id="checkAll" type="checkbox" aria-label="选择全部来源 IP"></th><th>来源 IP</th><th>节点</th><th>状态</th><th>地区</th><th>当前设备</th><th class="num">总流量</th><th>最近活动</th></tr></thead>
+          <thead><tr><th class="check-col"><input id="checkAll" type="checkbox" aria-label="选择全部来源 IP"></th><th>来源 IP</th><th>节点</th><th>状态</th><th>地区</th><th>当前设备</th><th class="num" id="detailMetricHeader">总流量</th><th>最近活动</th></tr></thead>
           <tbody id="detailBody"></tbody>
         </table>
         <div class="empty" id="detailEmpty" hidden>当前时间范围没有来源 IP。</div>
@@ -313,7 +317,7 @@
       </div>
       <div class="table-wrap">
         <table id="siteTable" hidden>
-          <thead><tr><th>目标站点</th><th class="num">总流量</th><th class="num">上传 / 下载</th><th class="num">访问 IP 数</th><th>访问最多 IP</th><th>最近活动</th></tr></thead>
+          <thead><tr><th>目标站点</th><th class="num" id="siteMetricHeader">总流量</th><th class="num" id="siteTrafficHeader">上传 / 下载</th><th class="num">访问 IP 数</th><th>访问最多 IP</th><th>最近活动</th></tr></thead>
           <tbody id="siteBody"></tbody>
         </table>
         <div class="empty" id="siteEmpty" hidden><div><strong>还没有站点数据</strong>采集器会在下一次上报时带上目标主机名/IP 的聚合流量。</div></div>
@@ -327,7 +331,7 @@
       </div>
       <div class="modal-body">
         <table id="ipSitesTable" hidden>
-          <thead><tr><th>目标站点</th><th>正在活跃</th><th class="num">总流量</th><th class="num">上传 / 下载</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
+          <thead><tr><th>目标站点</th><th>正在活跃</th><th class="num" id="ipSitesMetricHeader">总流量</th><th class="num" id="ipSitesTrafficHeader">上传 / 下载</th><th class="num">活跃</th><th>最近活动</th></tr></thead>
           <tbody id="ipSitesBody"></tbody>
         </table>
         <div class="empty" id="ipSitesEmpty" hidden><div><strong>没有可显示的真实域名</strong>该 IP 当前只有链路 IP 或探针流量，已按噪声规则隐藏。</div></div>
@@ -354,6 +358,9 @@
     const el = Object.fromEntries([
       "refreshButton", "refreshState", "errorBanner", "rangeButtons", "nodePicker", "scopeNodes",
       "nodeTrigger", "nodeMenu", "nodeOptions", "nodeSelectAll", "nodeSelectionMeta",
+      "modeNotice", "totalLabel", "uploadLabel", "downloadLabel",
+      "rankingMetricHeader", "detailMetricHeader", "siteMetricHeader", "siteTrafficHeader",
+      "ipSitesMetricHeader", "ipSitesTrafficHeader",
       "totalValue", "totalDetail", "uploadValue", "uploadDetail",
       "downloadValue", "downloadDetail", "deviceValue", "deviceDetail",
       "onlineValue", "onlineDetail",
@@ -490,10 +497,46 @@
         || null;
     }
 
+    function connectionsMode() {
+      return selectedNodes().some((node) => node.metric_mode === 'connections');
+    }
+
+    function metricNumberOf(item) {
+      if (!item) return 0;
+      if (connectionsMode()) {
+        return Number(item.connections ?? item.connection_minutes ?? 0) || 0;
+      }
+      return Number(item.total) || 0;
+    }
+
+    function formatCount(value) {
+      return (Number(value) || 0).toLocaleString("zh-CN");
+    }
+
+    function formatMetric(value) {
+      return connectionsMode() ? formatCount(value) + " 次" : formatBytes(value);
+    }
+
+    function updateMetricLabels() {
+      const connectionMode = connectionsMode();
+      el.modeNotice.hidden = !connectionMode;
+      el.totalLabel.textContent = connectionMode ? "连接次数" : "总流量";
+      el.rankingMetricHeader.textContent = connectionMode ? "连接次数" : "总流量";
+      el.detailMetricHeader.textContent = connectionMode ? "连接次数" : "总流量";
+      el.siteMetricHeader.textContent = connectionMode ? "连接次数" : "总流量";
+      el.siteTrafficHeader.textContent = connectionMode ? "流量（不适用）" : "上传 / 下载";
+      el.ipSitesMetricHeader.textContent = connectionMode ? "连接次数" : "总流量";
+      el.ipSitesTrafficHeader.textContent = connectionMode ? "流量（不适用）" : "上传 / 下载";
+    }
+
     function sortedDevices(devices) {
       return devices.sort((a, b) => {
         const online = Number(Boolean(b.online)) - Number(Boolean(a.online));
         if (online) return online;
+        if (connectionsMode()) {
+          return (Number(b.connections) || 0) - (Number(a.connections) || 0)
+            || (Number(b.last_seen_ms) || 0) - (Number(a.last_seen_ms) || 0);
+        }
         const primary = (Number(b[state.sort]) || 0) - (Number(a[state.sort]) || 0);
         return primary || (Number(b.total) || 0) - (Number(a.total) || 0);
       });
@@ -573,6 +616,7 @@
 
     function renderSummary() {
       renderScope();
+      updateMetricLabels();
       const nodes = selectedNodes();
       if (!nodes.length) {
         el.totalValue.textContent = "—";
@@ -590,20 +634,30 @@
       const upload = nodes.reduce((sum, node) => sum + (Number(node.upload) || 0), 0);
       const download = nodes.reduce((sum, node) => sum + (Number(node.download) || 0), 0);
       const total = upload + download;
+      const connections = nodes.reduce((sum, node) => sum + (Number(node.connections) || 0), 0);
       const sourceCount = nodes.reduce((sum, node) => sum + (Number(node.source_count) || 0), 0);
       const deviceCount = nodes.reduce((sum, node) => sum + (Number(node.device_count) || 0), 0);
       const onlineDeviceCount = nodes.reduce((sum, node) => sum + (Number(node.online_device_count) || 0), 0);
       const online = nodes.flatMap((node) =>
         (Array.isArray(node.sources) ? node.sources : []).filter((source) => source.online)
       );
-      el.totalValue.textContent = formatBytes(total);
-      el.uploadValue.textContent = formatBytes(upload);
-      el.downloadValue.textContent = formatBytes(download);
+      if (connectionsMode()) {
+        el.totalValue.textContent = formatCount(connections);
+        el.uploadValue.textContent = "—";
+        el.downloadValue.textContent = "—";
+        el.uploadDetail.textContent = "Xray 模式不统计流量";
+        el.downloadDetail.textContent = "Xray 模式不统计流量";
+        el.totalDetail.textContent = selectionLabel() + " · 连接次数 · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
+      } else {
+        el.totalValue.textContent = formatBytes(total);
+        el.uploadValue.textContent = formatBytes(upload);
+        el.downloadValue.textContent = formatBytes(download);
+        el.uploadDetail.textContent = "占总量 " + (total ? ((upload / total) * 100).toFixed(1) : "0.0") + "%";
+        el.downloadDetail.textContent = "占总量 " + (total ? ((download / total) * 100).toFixed(1) : "0.0") + "%";
+        el.totalDetail.textContent = selectionLabel() + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
+      }
       el.deviceValue.textContent = String(deviceCount);
       el.onlineValue.textContent = String(online.length);
-      el.totalDetail.textContent = selectionLabel() + " · 近 " + (state.hours >= 24 ? Math.round(state.hours / 24) + " 天" : state.hours + " 小时");
-      el.uploadDetail.textContent = "占总量 " + (total ? ((upload / total) * 100).toFixed(1) : "0.0") + "%";
-      el.downloadDetail.textContent = "占总量 " + (total ? ((download / total) * 100).toFixed(1) : "0.0") + "%";
       el.deviceDetail.textContent = "来源 IP " + sourceCount + " 个 · " + nodes.length + " 个节点";
       el.onlineDetail.textContent = online.length
         ? online.slice(0, 2).map((source) => source.source_ip).join(" / ") + (online.length > 2 ? " 等 " + online.length + " 个" : "") + " · 在线设备 " + onlineDeviceCount
@@ -685,7 +739,7 @@
           nameTd,
           regionTd,
           latestTd,
-          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(device.total) }),
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatMetric(metricNumberOf(device)) }),
           Object.assign(document.createElement("td"), { className: "num", textContent: formatMinutes(device.active_minutes) }),
           (() => {
             const td = makeCell();
@@ -782,7 +836,7 @@
           statusTd,
           geoTd,
           deviceTd,
-          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(source.total) }),
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatMetric(metricNumberOf(source)) }),
           lastTd,
         );
         tr.addEventListener("click", (event) => {
@@ -816,10 +870,12 @@
               download: 0,
               total: 0,
               active_minutes: 0,
+              connections: 0,
               connection_minutes: 0,
               last_seen_ms: 0,
               source_count: 0,
               _topTotals: new Map(),
+              _topConnections: new Map(),
             };
             bySite.set(site.site, merged);
           }
@@ -827,6 +883,7 @@
           merged.download += Number(site.download) || 0;
           merged.total += Number(site.total) || 0;
           merged.active_minutes += Number(site.active_minutes) || 0;
+          merged.connections += Number(site.connections) || 0;
           merged.connection_minutes += Number(site.connection_minutes) || 0;
           merged.source_count += Number(site.source_count) || 0;
           merged.last_seen_ms = Math.max(merged.last_seen_ms, Number(site.last_seen_ms) || 0);
@@ -834,6 +891,11 @@
             if (!source.source_ip) return;
             const current = merged._topTotals.get(source.source_ip) || 0;
             merged._topTotals.set(source.source_ip, current + (Number(source.total) || 0));
+            const currentConnections = merged._topConnections.get(source.source_ip) || 0;
+            merged._topConnections.set(
+              source.source_ip,
+              currentConnections + (Number(source.connections ?? source.connection_minutes) || 0),
+            );
           });
           if (site.top_ip) {
             const current = merged._topTotals.get(site.top_ip) || 0;
@@ -842,14 +904,23 @@
         });
       });
       return Array.from(bySite.values()).map((site) => {
-        const top = Array.from(site._topTotals.entries()).sort((a, b) => b[1] - a[1])[0] || ["", 0];
+        const connectionMode = site.total <= 0 && site.connections > 0;
+        const metricMap = connectionMode ? site._topConnections : site._topTotals;
+        const metricTotal = connectionMode ? site.connections : site.total;
+        const top = Array.from(metricMap.entries()).sort((a, b) => b[1] - a[1])[0] || ["", 0];
         site.top_ip = top[0];
         site.top_ip_total = top[1];
-        site.top_ip_share = site.total ? top[1] / site.total : 0;
+        site.top_ip_share = metricTotal ? top[1] / metricTotal : 0;
+        site.metric_mode = connectionMode ? "connections" : "traffic";
         delete site._topTotals;
+        delete site._topConnections;
         return site;
-      }).filter((site) => site.total > 0)
-        .sort((a, b) => b.total - a.total)
+      }).filter((site) => site.total > 0 || site.connections > 0)
+        .sort((a, b) => (
+          b.metric_mode === "connections" ? b.connections : b.total
+        ) - (
+          a.metric_mode === "connections" ? a.connections : a.total
+        ))
         .slice(0, 200);
     }
 
@@ -886,10 +957,10 @@
         lastTd.appendChild(textBlock(formatMoment(site.last_seen_ms), "活跃 " + formatMinutes(site.active_minutes)));
         tr.append(
           siteTd,
-          Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(site.total) }),
+          Object.assign(document.createElement("td"), { className: "num", textContent: formatMetric(metricNumberOf(site)) }),
           Object.assign(document.createElement("td"), {
             className: "num",
-            textContent: formatBytes(site.upload) + " / " + formatBytes(site.download),
+            textContent: connectionsMode() ? "—" : formatBytes(site.upload) + " / " + formatBytes(site.download),
           }),
           Object.assign(document.createElement("td"), { className: "num", textContent: String(site.source_count || 0) }),
           topTd,
@@ -936,10 +1007,10 @@
           tr.append(
             siteTd,
             statusTd,
-            Object.assign(document.createElement("td"), { className: "num", textContent: formatBytes(site.total) }),
+            Object.assign(document.createElement("td"), { className: "num", textContent: formatMetric(metricNumberOf(site)) }),
             Object.assign(document.createElement("td"), {
               className: "num",
-              textContent: formatBytes(site.upload) + " / " + formatBytes(site.download),
+              textContent: connectionsMode() ? "—" : formatBytes(site.upload) + " / " + formatBytes(site.download),
             }),
             Object.assign(document.createElement("td"), { className: "num", textContent: formatMinutes(site.active_minutes) }),
             lastTd,
@@ -976,7 +1047,7 @@
       el.timelineContent.hidden = false;
       el.selectedIp.textContent = device.label;
       el.selectedMeta.textContent = device.region_label + " · " + device.ip_count + " 个历史 IP · 最新 " + device.latest_ip;
-      el.selectedTotal.textContent = formatBytes(device.total);
+      el.selectedTotal.textContent = formatMetric(metricNumberOf(device));
       el.selectedConnection.textContent = "活跃 " + formatMinutes(device.active_minutes);
       await loadTimeline(node.node_id, device.ips.map((item) => item.source_ip));
     }
@@ -989,7 +1060,10 @@
       const last = Math.floor(Number(timeline.window_end_ms) / bucketMs) * bucketMs;
       const result = [];
       for (let current = first; current <= last; current += bucketMs) {
-        result.push(byBucket.get(current) || { bucket_ms: current, upload: 0, download: 0, total: 0, active_minutes: 0 });
+        result.push(byBucket.get(current) || {
+          bucket_ms: current, upload: 0, download: 0, total: 0,
+          connections: 0, active_minutes: 0,
+        });
       }
       return result;
     }
@@ -1007,14 +1081,20 @@
       el.timelineContent.hidden = false;
       el.timelineSubtitle.textContent = device.label + " · " + bucketLabel(timeline.bucket_ms) + "粒度";
       const buckets = fillBuckets(timeline);
-      const maximum = Math.max(1, ...buckets.map((bucket) => Number(bucket.total) || 0));
+      const connectionMode = connectionsMode();
+      const bucketMetric = (bucket) => connectionMode
+        ? Number(bucket.connections) || 0
+        : Number(bucket.total) || 0;
+      const maximum = Math.max(1, ...buckets.map(bucketMetric));
       el.chart.style.gridTemplateColumns = "repeat(" + Math.max(1, buckets.length) + ", minmax(2px, 1fr))";
       el.chart.replaceChildren();
-      if (!buckets.some((bucket) => Number(bucket.total) > 0)) {
+      if (!buckets.some((bucket) => bucketMetric(bucket) > 0)) {
         const empty = document.createElement("div");
         empty.className = "timeline-empty";
         empty.style.gridColumn = "1 / -1";
-        empty.textContent = "所选设备在此时间窗口没有新增流量。";
+        empty.textContent = connectionMode
+          ? "所选设备在此时间窗口没有新增连接。"
+          : "所选设备在此时间窗口没有新增流量。";
         el.chart.appendChild(empty);
       } else {
         buckets.forEach((bucket) => {
@@ -1022,18 +1102,22 @@
           bar.className = "bar";
           bar.tabIndex = 0;
           const label = formatBucket(bucket.bucket_ms, timeline.bucket_ms);
-          bar.title = label + "\n总计 " + formatBytes(bucket.total) + "\n上传 " + formatBytes(bucket.upload) + "\n下载 " + formatBytes(bucket.download);
+          bar.title = connectionMode
+            ? label + "\n连接次数 " + formatCount(bucket.connections)
+            : label + "\n总计 " + formatBytes(bucket.total) + "\n上传 " + formatBytes(bucket.upload) + "\n下载 " + formatBytes(bucket.download);
           bar.setAttribute("aria-label", bar.title);
           const stack = document.createElement("div");
           stack.className = "bar-stack";
-          const ratio = Math.min(1, (Number(bucket.total) || 0) / maximum);
+          const ratio = Math.min(1, bucketMetric(bucket) / maximum);
           stack.style.height = (ratio > 0 ? Math.max(2, ratio * 100) : 0) + "%";
           const up = document.createElement("div");
           up.className = "seg up";
-          up.style.flex = String(Math.max(0, Number(bucket.upload) || 0));
+          up.style.flex = connectionMode
+            ? String(Math.max(0, Number(bucket.connections) || 0))
+            : String(Math.max(0, Number(bucket.upload) || 0));
           const down = document.createElement("div");
           down.className = "seg down";
-          down.style.flex = String(Math.max(0, Number(bucket.download) || 0));
+          down.style.flex = connectionMode ? "0" : String(Math.max(0, Number(bucket.download) || 0));
           stack.append(down, up);
           bar.appendChild(stack);
           el.chart.appendChild(bar);
@@ -1041,7 +1125,9 @@
       }
       el.axisStart.textContent = formatBucket(Number(timeline.window_start_ms), timeline.bucket_ms);
       el.axisEnd.textContent = formatBucket(Number(timeline.window_end_ms), timeline.bucket_ms);
-      el.chartMeta.textContent = "柱高按窗口内单 bucket 最大流量缩放 · " + buckets.length + " 个时间点";
+      el.chartMeta.textContent = connectionMode
+        ? "柱高按窗口内单 bucket 最大连接次数缩放 · " + buckets.length + " 个时间点"
+        : "柱高按窗口内单 bucket 最大流量缩放 · " + buckets.length + " 个时间点";
     }
 
     async function loadTimeline(nodeId, ips) {
