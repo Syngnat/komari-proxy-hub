@@ -9,15 +9,15 @@
       "short": "proxy-traffic",
       "category": "monitoring",
       "description": {
-        "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数、域名和活跃时间。",
-        "en": "Aggregates proxy traffic by source IP. Clash-compatible cores provide exact traffic; Xray access logs provide connection counts, domains and activity."
+        "zh_CN": "按来源 IP 汇总代理流量，支持 Clash API 完整统计、Xray access log 降级统计，以及 sing-box VLESS Reality 节点创建向导。",
+        "en": "Proxy traffic ranking by source IP, with exact Clash API statistics, Xray access-log fallback, and a sing-box VLESS Reality provisioning wizard."
       },
-      "version": "1.9.0",
+      "version": "2.0.0",
       "author": "Syngnat",
       "komari": ">=1.6.0",
       "url": "https://github.com/Syngnat/komari-proxy-traffic",
-      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v1.9.0/komari-proxy-traffic-v1.9.0.zip",
-      "sha256": "14fc14559d5a2216b4e83254f8179f82d6a4fd646a4be5cf3e6bb7bba2133a06"
+      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v2.0.0/komari-proxy-traffic-v2.0.0.zip",
+      "sha256": "07a95de2df892f278feaf33925a83c82ab50041aeedbb7913df33d61e93c2199"
     }
   ]
 }

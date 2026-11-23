@@ -5,16 +5,17 @@
   },
   "short": "proxy-traffic",
   "description": {
-    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数、域名和活跃时间。",
-    "en": "Aggregates proxy traffic by source IP. Clash-compatible cores provide exact traffic; Xray access logs provide connection counts, domains and activity."
+    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；内置 sing-box VLESS Reality 节点创建向导。",
+    "en": "Aggregates proxy traffic by source IP, with exact Clash API statistics, Xray access-log fallback, and a built-in sing-box VLESS Reality provisioning wizard."
   },
   "author": "Syngnat",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",
   "permissions": {
     "allowRoutes": true,
+    "allowSystemRPC": true,
     "timeout": 30
   },
   "pages": [
@@ -23,6 +24,15 @@
       "title": {
         "zh_CN": "代理流量排行",
         "en": "Proxy Traffic Ranking"
+      },
+      "type": "iframe",
+      "visibility": "admin"
+    },
+    {
+      "file": "pages/provision.html",
+      "title": {
+        "zh_CN": "创建 sing-box 节点",
+        "en": "Create sing-box node"
       },
       "type": "iframe",
       "visibility": "admin"

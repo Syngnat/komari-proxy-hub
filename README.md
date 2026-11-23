@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：1.9.0
+> 当前版本：2.0.0
 
 ## 功能
 
@@ -21,6 +21,7 @@
 - 每个 IP 的域名明细，支持“正在活跃”排序
 - 过滤 IP-only、Cloudflare challenge、DNS / 连通性探针等噪声
 - 所有查询接口仅允许 Komari 管理员访问
+- 内置 sing-box 节点创建向导：通过 Komari 远程执行创建 VLESS + Reality 入站
 
 ## 架构
 
@@ -116,6 +117,19 @@ docker compose -f docker-compose.collector.yml up -d --build
 Clash 模式把 `clash-secret` 放进 `collector-config/`；Xray 模式把 `mode` 改为 `xray`、`access_log` 改为 `/var/log/xray/access.log`，并取消 `docker-compose.collector.yml` 里 access log 挂载的注释。
 
 collector 使用 `network_mode: host`，因此 `clash_api: http://127.0.0.1:9090` 可以直接访问宿主机上的 Clash API；该配置适用于 Linux。Docker 方式仍需要从 Komari 插件市场安装插件。
+
+### 创建 sing-box 节点
+
+插件安装后，在 Komari 的“插件功能”下打开“创建 sing-box 节点”。页面会通过 Komari 远程执行：
+
+1. 选择已接入 Komari 的目标节点。
+2. 选择端口、Reality SNI、服务名和配置文件路径。
+3. 可选先执行 sing-box 官方安装脚本。
+4. 合并配置、创建备份、校验配置并重启 sing-box。
+
+首版只生成 **VLESS + Reality** 入站，不会覆盖已有 tag。成功后页面会输出分享链接、Clash API secret 路径和配置备份路径；还需要自行放行云防火墙端口并部署 collector。
+
+该功能需要插件声明 `allowSystemRPC`，更新时 Komari 会重新请求权限确认。远程执行会修改节点配置，请只在明确目标节点上使用。
 
 ### 1. 部署聚合服务
 
