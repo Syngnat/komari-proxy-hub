@@ -12,12 +12,12 @@
         "zh_CN": "按来源 IP 汇总代理流量，支持 Clash API 完整统计、Xray access log 降级统计、sing-box / Xray 节点创建、长短链订阅，以及规则、节点和策略组可视化编辑。",
         "en": "Proxy traffic ranking by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual editor for rules, proxies, and proxy groups."
       },
-      "version": "2.2.8",
+      "version": "2.2.9",
       "author": "Syngnat",
       "komari": ">=1.6.0",
       "url": "https://github.com/Syngnat/komari-proxy-traffic",
-      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v2.2.8/komari-proxy-traffic-v2.2.8.zip",
-      "sha256": "50a0495549fd6b8494520846a42baf3807863e9e52338bbb3f2797caecc0badf"
+      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v2.2.9/komari-proxy-traffic-v2.2.9.zip",
+      "sha256": "3e7711fbe58f55e0bf62b1c9d6d01aed0d892ab8f72cbab8bfe47d02a8633b4d"
     }
   ]
 }

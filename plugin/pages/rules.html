@@ -111,8 +111,9 @@
     .form-panel .grid { margin-top: 0; }
     .form-panel .field { min-width: 0; }
     .form-panel textarea { min-height: 62px; resize: vertical; }
-    .field-actions { display: flex; align-items: end; gap: 8px; }
-    .field-actions select { flex: 1; }
+    .field-actions { display: flex; align-items: stretch; gap: 8px; }
+    .field-actions select { flex: 1; min-width: 0; }
+    .field-actions button { flex: 0 0 auto; padding-left: 14px; padding-right: 14px; white-space: nowrap; }
     .check-inline { display: flex; align-items: center; gap: 6px; color: var(--text); }
     .check-inline.hidden { display: none; }
     .node-specific { display: block; }
@@ -201,6 +202,8 @@
       body { padding: 14px; }
       .workspace, .grid { grid-template-columns: 1fr; }
       .rule-form { grid-template-columns: 1fr 1fr; }
+      .rule-form .field-actions { flex-wrap: wrap; }
+      .rule-form .field-actions select { flex-basis: 100%; }
       .rule-type-body { padding-left: 14px; }
       .rule-item {
         grid-template-columns: 34px minmax(0, 1fr);
@@ -323,17 +326,20 @@
                 <label for="ruleTarget">目标策略组</label>
                 <div class="field-actions">
                   <select id="ruleTarget"></select>
-                  <button id="newGroupFromRule" class="small" type="button">＋ 新建分组</button>
+                  <button id="newGroupFromRule" type="button">＋ 新建分组</button>
                 </div>
               </div>
               <div class="field">
-                <label for="ruleOptions">选项</label>
+                <label for="ruleOptions">选项（通常留空）</label>
                 <input id="ruleOptions" placeholder="no-resolve">
               </div>
               <div class="actions" style="margin:0">
                 <button id="applyRule" class="primary" type="button">添加规则</button>
                 <button id="cancelRule" type="button" hidden>取消</button>
               </div>
+            </div>
+            <div class="hint rule-form-help">
+              <code>no-resolve</code> 只用于 IP-CIDR、IP-CIDR6、GEOIP、IP-ASN 等 IP 类规则：不把域名解析成 IP，避免 DNS 泄漏和额外延迟；普通域名规则留空即可。
             </div>
             <div id="ruleRows" class="rule-tree"></div>
           </div>
