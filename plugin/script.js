@@ -391,6 +391,9 @@ function load() {
   server.route("POST", "/api/proxy-traffic/sub/nodes/import", (req, res) => {
     return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes/import");
   });
+  server.route("POST", "/api/proxy-traffic/sub/nodes/import-rules", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes/import-rules");
+  });
   server.route("POST", "/api/proxy-traffic/sub/subscriptions", (req, res) => {
     return proxyJsonPost(req, res, "/api/proxy-traffic/sub/subscriptions");
   });

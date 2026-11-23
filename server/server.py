@@ -1876,7 +1876,7 @@ def _clash_proxy(node: dict, name: str) -> dict:
         'type': protocol,
         'server': node['server'],
         'port': int(node['port']),
-        'udp': True,
+        'udp': bool(extra.get('udp', True)),
     }
     if protocol == 'ss':
         proxy['type'] = 'ss'
@@ -1939,6 +1939,8 @@ def _clash_proxy(node: dict, name: str) -> dict:
             proxy['obfs'] = str(extra['obfs'])
         if extra.get('obfs_password'):
             proxy['obfs-password'] = str(extra['obfs_password'])
+    if extra.get('dialer_proxy'):
+        proxy['dialer-proxy'] = str(extra['dialer_proxy'])
     return proxy
 
 
@@ -2052,7 +2054,15 @@ def _singbox_outbound(node: dict, tag: str) -> dict:
 
 def _singbox_profile(nodes: list[dict]) -> str:
     named = _unique_node_names(nodes)
-    outbounds = [_singbox_outbound(node, name) for node, name in named]
+    name_to_tag = {str(node.get('name') or ''): name for node, name in named}
+    outbounds = []
+    for node, name in named:
+        outbound = _singbox_outbound(node, name)
+        extra = node.get('extra') if isinstance(node.get('extra'), dict) else {}
+        dialer = str(extra.get('dialer_proxy') or '').strip()
+        if dialer and dialer in name_to_tag:
+            outbound['detour'] = name_to_tag[dialer]
+        outbounds.append(outbound)
     outbounds.append({
         'type': 'selector',
         'tag': 'PROXY',
@@ -2549,6 +2559,136 @@ def import_subscription_links(text: object) -> dict:
     return {'ok': True, 'imported': len(nodes), 'nodes': nodes, 'errors': errors}
 
 
+def _proxy_to_subscription_node(proxy: object, file_meta: dict) -> dict:
+    if not isinstance(proxy, dict):
+        raise ValueError('proxy must be an object')
+    protocol = str(proxy.get('type') or '').strip().lower()
+    if protocol == 'shadowsocks':
+        protocol = 'ss'
+    if protocol not in ('vless', 'vmess', 'trojan', 'ss', 'hysteria2', 'tuic', 'anytls'):
+        raise ValueError('unsupported proxy type: ' + (protocol or 'unknown'))
+    name = str(proxy.get('name') or '').strip()
+    if not name:
+        name = protocol.upper() + ' · ' + str(proxy.get('server') or '')
+    server = str(proxy.get('server') or '').strip()
+    port = int(proxy.get('port') or 0)
+    security = 'none'
+    if protocol in ('anytls', 'hysteria2', 'tuic'):
+        security = 'tls'
+    if proxy.get('tls'):
+        security = 'tls'
+    reality = proxy.get('reality-opts')
+    if isinstance(reality, dict):
+        security = 'reality'
+    network = str(proxy.get('network') or '').strip().lower()
+    if not network and protocol in ('vless', 'vmess', 'trojan'):
+        network = 'tcp'
+    ws = proxy.get('ws-opts') if isinstance(proxy.get('ws-opts'), dict) else {}
+    ws_headers = ws.get('headers') if isinstance(ws.get('headers'), dict) else {}
+    grpc = proxy.get('grpc-opts') if isinstance(proxy.get('grpc-opts'), dict) else {}
+    extra: dict = {}
+    alpn = proxy.get('alpn')
+    if alpn:
+        extra['alpn'] = alpn
+    if proxy.get('udp') is not None:
+        extra['udp'] = bool(proxy.get('udp'))
+    if proxy.get('skip-cert-verify') is not None:
+        extra['skip_cert_verify'] = bool(proxy.get('skip-cert-verify'))
+        extra['allow_insecure'] = bool(proxy.get('skip-cert-verify'))
+    for source, target in (
+        ('dialer-proxy', 'dialer_proxy'),
+        ('ip-version', 'ip_version'),
+        ('client-fingerprint', 'client_fingerprint'),
+        ('obfs', 'obfs'),
+        ('obfs-password', 'obfs_password'),
+        ('congestion-controller', 'congestion_control'),
+        ('udp-relay-mode', 'udp_relay_mode'),
+    ):
+        if proxy.get(source) not in (None, ''):
+            extra[target] = proxy.get(source)
+    if protocol == 'ss':
+        extra['method'] = str(proxy.get('cipher') or proxy.get('method') or '')
+    elif protocol == 'vmess':
+        extra['alter_id'] = proxy.get('alterId', proxy.get('alter-id', 0)) or 0
+        extra['scy'] = str(proxy.get('cipher') or proxy.get('scy') or 'auto')
+    elif protocol == 'tuic':
+        extra.setdefault('congestion_control', 'bbr')
+        extra.setdefault('udp_relay_mode', 'native')
+    reality_public = ''
+    reality_short = ''
+    if isinstance(reality, dict):
+        reality_public = str(reality.get('public-key') or reality.get('public_key') or '')
+        reality_short = str(reality.get('short-id') or reality.get('short_id') or '')
+    payload = {
+        'name': name[:120],
+        'protocol': protocol,
+        'server': server,
+        'port': port,
+        'user_id': str(proxy.get('uuid') or proxy.get('id') or ''),
+        'password': str(proxy.get('password') or ''),
+        'flow': str(proxy.get('flow') or ''),
+        'security': security,
+        'sni': str(proxy.get('sni') or proxy.get('servername') or ''),
+        'fingerprint': str(proxy.get('client-fingerprint') or ('chrome' if security in ('tls', 'reality') else '')),
+        'public_key': reality_public,
+        'short_id': reality_short,
+        'network': network,
+        'host': str(ws_headers.get('Host') or ws_headers.get('host') or proxy.get('host') or ''),
+        'path': str(ws.get('path') or proxy.get('path') or ''),
+        'service_name': str(grpc.get('grpc-service-name') or grpc.get('serviceName') or ''),
+        'extra': extra,
+        'external_key': 'rule:' + hashlib.sha256(
+            json.dumps(proxy, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        ).hexdigest()[:40],
+        'share_link': '',
+        'enabled': True,
+    }
+    return payload
+
+
+def import_rule_nodes(file_ids: object = None) -> dict:
+    state = discover_rule_files()
+    if not isinstance(file_ids, list) or not file_ids:
+        files = state['files']
+    else:
+        wanted = {str(item) for item in file_ids}
+        files = [item for item in state['files'] if item['id'] in wanted]
+    if not files:
+        raise ValueError('没有可导入的规则文件')
+    nodes = []
+    errors = []
+    seen = set()
+    for file_meta in files:
+        path = Path(file_meta['path'])
+        try:
+            content = path.read_text(encoding='utf-8')
+            document = _rule_document(content)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            errors.append({'file': file_meta.get('label'), 'error': str(exc)})
+            continue
+        proxies = document.get('proxies')
+        if not isinstance(proxies, list):
+            continue
+        for index, proxy in enumerate(proxies, start=1):
+            try:
+                payload = _proxy_to_subscription_node(proxy, file_meta)
+                saved = save_subscription_node(payload)
+                nodes.append(saved)
+                seen.add(saved['id'])
+            except (ValueError, TypeError, OSError) as exc:
+                errors.append({
+                    'file': file_meta.get('label'),
+                    'proxy': index,
+                    'error': str(exc),
+                })
+    return {
+        'ok': True,
+        'imported': len(seen),
+        'nodes': nodes,
+        'errors': errors,
+    }
+
+
 def _rule_document(content: object) -> dict:
     if not isinstance(content, str):
         raise ValueError('content must be text')
@@ -2772,7 +2912,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.2'
+    server_version = 'ProxyTrafficAggregate/2.2.3'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:
@@ -3078,6 +3218,12 @@ class Handler(BaseHTTPRequestHandler):
                 if parsed.path == '/api/proxy-traffic/sub/nodes/import':
                     result = import_subscription_links(
                         payload.get('links') if isinstance(payload, dict) else None
+                    )
+                    self.send_json(200, result)
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/nodes/import-rules':
+                    result = import_rule_nodes(
+                        payload.get('file_ids') if isinstance(payload, dict) else None
                     )
                     self.send_json(200, result)
                     return

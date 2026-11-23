@@ -116,7 +116,10 @@
           <h2>订阅节点库</h2>
           <div class="hint">创建节点成功后会自动写入；也可以在这里粘贴任意分享链接导入。</div>
         </div>
-        <button id="refresh" type="button">刷新</button>
+        <div class="base-presets">
+          <button id="importRules" type="button">从分流规则导入节点</button>
+          <button id="refresh" type="button">刷新</button>
+        </div>
       </div>
       <div id="nodeList" class="node-list"></div>
       <details class="import-box">
@@ -196,13 +199,14 @@
 
   <script>
     const el = Object.fromEntries([
-      "refresh", "nodeList", "importLinks", "importButton", "clearImport",
+      "refresh", "importRules", "nodeList", "importLinks", "importButton", "clearImport",
       "editorTitle", "selectedCount", "name", "format", "baseUrl", "komariBase",
       "selectAll", "clearSelection", "includeAll", "save", "cancelEdit", "status", "subscriptionList",
     ].map((id) => [id, document.getElementById(id)]));
 
     let state = { nodes: [], subscriptions: [] };
     let editingId = "";
+    let autoImportAttempted = false;
 
     function setStatus(message, kind) {
       el.status.textContent = message || "";
@@ -259,7 +263,7 @@
       if (!state.nodes.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "节点库还是空的。先在“创建代理节点”里创建，或粘贴分享链接导入。";
+        empty.textContent = "节点库还是空的。可在上方点击“从分流规则导入节点”，或在“创建代理节点”里创建。";
         el.nodeList.appendChild(empty);
         updateSelectedCount();
         return;
@@ -485,6 +489,33 @@
       if (!el.baseUrl.value) el.baseUrl.value = state.default_base_url || defaultBase();
       renderNodes();
       renderSubscriptions();
+      if (!state.nodes.length && !autoImportAttempted) {
+        autoImportAttempted = true;
+        setStatus("订阅节点库为空，正在从两个分流规则文件导入节点…");
+        await importRules(true);
+      }
+    }
+
+    async function importRules(auto) {
+      try {
+        const payload = await api("/api/proxy-traffic/sub/nodes/import-rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        await loadState();
+        if (payload.errors && payload.errors.length) {
+          const first = payload.errors.slice(0, 3)
+            .map((item) => (item.proxy ? "第 " + item.proxy + " 个代理：" : "") + item.error)
+            .join("；");
+          setStatus("已导入 " + payload.imported + " 个节点，部分代理失败：" + first, "error");
+        } else {
+          setStatus("已从分流规则导入 " + payload.imported + " 个节点。", "ok");
+        }
+      } catch (error) {
+        if (!auto) setStatus("导入分流节点失败：" + error.message, "error");
+        else setStatus("自动导入节点失败：" + error.message, "error");
+      }
     }
 
     el.komariBase.addEventListener("click", () => {
@@ -509,6 +540,7 @@
         setStatus("刷新失败：" + error.message, "error");
       }
     });
+    el.importRules.addEventListener("click", () => importRules(false));
     el.clearImport.addEventListener("click", () => { el.importLinks.value = ""; });
     el.importButton.addEventListener("click", async () => {
       const links = el.importLinks.value.trim();

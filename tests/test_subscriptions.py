@@ -160,6 +160,10 @@ class SubscriptionTests(unittest.TestCase):
 
 @unittest.skipUnless(yaml is not None, 'PyYAML is required for rule tests')
 class RuleFileTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        server.init_db()
+
     def setUp(self):
         self.old_rule_dir = server.RULE_DIR
         self.old_public_base = server.RULE_PUBLIC_BASE
@@ -170,7 +174,28 @@ class RuleFileTests(unittest.TestCase):
         self.rule_path = directory / 'mihomo.yaml'
         document = {
             'mode': 'global',
-            'proxies': [{'name': 'A'}, {'name': 'B'}],
+            'proxies': [
+                {
+                    'name': 'A',
+                    'type': 'anytls',
+                    'server': 'a.example.com',
+                    'port': 443,
+                    'password': 'a-password',
+                    'sni': 'a.example.com',
+                },
+                {
+                    'name': 'B',
+                    'type': 'vmess',
+                    'server': 'b.example.com',
+                    'port': 443,
+                    'uuid': '11111111-2222-3333-4444-555555555555',
+                    'alterId': 0,
+                    'cipher': 'auto',
+                    'network': 'ws',
+                    'ws-opts': {'path': '/ws', 'headers': {'Host': 'b.example.com'}},
+                    'dialer-proxy': 'A',
+                },
+            ],
             'proxy-groups': [{'name': '🚀 节点选择', 'type': 'select'}],
             'rule-providers': {'acl_ai': {'type': 'http'}},
             'rules': [
@@ -214,6 +239,17 @@ class RuleFileTests(unittest.TestCase):
             server.validate_rule_content('rules: [')
         with self.assertRaises(ValueError):
             server.validate_rule_content('mode: global\nrules: not-a-list\n')
+
+    def test_import_rule_proxies(self):
+        result = server.import_rule_nodes()
+        self.assertEqual(result['imported'], 2)
+        self.assertEqual(result['errors'], [])
+        nodes = {node['name']: node for node in result['nodes']}
+        self.assertEqual(nodes['A']['protocol'], 'anytls')
+        self.assertEqual(nodes['B']['protocol'], 'vmess')
+        self.assertEqual(nodes['B']['network'], 'ws')
+        self.assertEqual(nodes['B']['host'], 'b.example.com')
+        self.assertEqual(nodes['B']['extra']['dialer_proxy'], 'A')
 
 
 if __name__ == '__main__':
