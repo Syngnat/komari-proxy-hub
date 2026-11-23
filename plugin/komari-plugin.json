@@ -5,11 +5,11 @@
   },
   "short": "proxy-traffic",
   "description": {
-    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；支持 sing-box / Xray 节点创建、订阅节点库、长短链订阅和分流规则可视化编辑。",
-    "en": "Aggregates proxy traffic by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual YAML rule editor."
+    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；支持 sing-box / Xray 节点创建、订阅节点库、长短链订阅，以及规则、节点和策略组可视化编辑。",
+    "en": "Aggregates proxy traffic by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual editor for rules, proxies, and proxy groups."
   },
   "author": "Syngnat",
-  "version": "2.2.7",
+  "version": "2.2.8",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",

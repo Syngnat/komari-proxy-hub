@@ -227,12 +227,17 @@ class RuleFileTests(unittest.TestCase):
         self.assertEqual(data['rules'][0], 'DOMAIN-SUFFIX,example.com,🚀 节点选择')
         self.assertEqual(data['groups'], ['🚀 节点选择'])
         self.assertEqual(data['providers'], ['acl_ai'])
+        self.assertEqual(len(data['proxies']), 2)
+        self.assertEqual(data['proxies'][1]['ws-opts']['path'], '/ws')
+        self.assertEqual(data['proxy_groups'][0]['name'], '🚀 节点选择')
         prepared = server.prepare_rule_save(
             item['id'],
             self.rule_path.read_text(encoding='utf-8'),
         )
         self.assertEqual(prepared['path'], str(self.rule_path))
         self.assertEqual(prepared['rule_count'], 2)
+        self.assertEqual(len(prepared['proxies']), 2)
+        self.assertEqual(len(prepared['proxy_groups']), 1)
 
     def test_validate_rejects_bad_yaml(self):
         with self.assertRaises(ValueError):

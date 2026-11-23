@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：2.2.7
+> 当前版本：2.2.8
 
 ## 功能
 
@@ -26,7 +26,7 @@
 - 订阅管理：一个订阅可选多个节点，生成长链和短链
 - 同一订阅按客户端输出 mihomo / Clash、sing-box、Xray / v2rayN（base64）或明文链接
 - 订阅基址可使用 Komari 域名，也可使用独立域名
-- 分流规则可视化：自动识别订阅 YAML，规则表编辑、YAML 语法高亮、校验和原子保存
+- 分流规则可视化：自动识别订阅 YAML，支持规则、节点和策略组编辑，带 YAML 语法高亮、校验和原子保存
 
 ## 架构
 
@@ -205,11 +205,14 @@ https://sub.example.com/sub/<token>?format=base64
 打开“分流规则”页面后可以：
 
 1. 选择订阅文件，查看规则数量、节点数、策略组和规则提供者。
-2. 在“可视规则”里按规则表增删改、上下移动，目标策略组从现有 `proxy-groups` 中选择。
-3. 切到“YAML 源码”直接编辑完整 YAML，编辑器带语法高亮。
-4. 保存前校验 YAML，然后在规则文件所在节点执行远程写入；原文件会生成 `mihomo.yaml.bak-时间戳-随机串` 备份，写入使用临时文件原子替换。
+2. 在“可视规则”里按“规则类型 → 目标分组 → 匹配项”折叠查看，支持增删改、上下移动；默认只显示规则类型，目标策略组从现有 `proxy-groups` 中选择。
+3. 切到“节点”页签新增、编辑或删除节点，支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria2 和 TUIC，并可配置 TLS / REALITY、WS / gRPC、SNI、ALPN、`dialer-proxy` 等字段。
+4. 切到“分组”页签新增、编辑或删除策略组，支持 `select`、`url-test`、`fallback`、`load-balance`、`relay`，成员可以多选节点、其他分组以及 `DIRECT` / `REJECT`。
+5. 规则表单里的“目标策略组”可以直接选择现有分组，也可以点“＋ 新建分组”；新分组保存后会自动回到规则页并选中。
+6. 切到“YAML 源码”直接编辑完整 YAML，编辑器带语法高亮。
+7. 保存前校验 YAML，然后在规则文件所在节点执行远程写入；原文件会生成 `mihomo.yaml.bak-时间戳-随机串` 备份，写入使用临时文件原子替换。
 
-可视规则编辑只重写 `rules:` 区块，其他配置保持原样；`rules:` 区块内的注释会在可视化保存时被规范化移除。需要保留注释时请使用“YAML 源码”模式。
+可视化编辑只重写本次修改对应的 `proxies:`、`proxy-groups:` 或 `rules:` 区块，其他配置保持原样；被重写区块内的注释会按 YAML 数据重新规范化。改名节点或分组时，分组成员、规则目标、节点的 `dialer-proxy` 引用会同步更新。需要保留原注释时请使用“YAML 源码”模式。
 
 规则文件由 `proxy-traffic` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面会优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；建议配置 `PROXY_TRAFFIC_RULE_TARGET_IP` / `PROXY_TRAFFIC_RULE_TARGET_NAME`，配置后规则页只显示该节点，保存接口也会拒绝其他 VPS。
 

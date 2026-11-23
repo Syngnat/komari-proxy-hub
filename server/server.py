@@ -3035,6 +3035,8 @@ def read_rule_file(file_id: str) -> dict:
         'groups': _rule_groups(document),
         'providers': _rule_providers(document),
         'proxy_count': len(document.get('proxies') or []),
+        'proxies': document.get('proxies') if isinstance(document.get('proxies'), list) else [],
+        'proxy_groups': document.get('proxy-groups') if isinstance(document.get('proxy-groups'), list) else [],
     })
     return result
 
@@ -3050,6 +3052,8 @@ def validate_rule_content(content: object) -> dict:
         'providers': _rule_providers(document),
         'proxy_count': len(document.get('proxies') or []),
         'rule_count': len(rules),
+        'proxies': document.get('proxies') if isinstance(document.get('proxies'), list) else [],
+        'proxy_groups': document.get('proxy-groups') if isinstance(document.get('proxy-groups'), list) else [],
     }
 
 
@@ -3069,7 +3073,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.7'
+    server_version = 'ProxyTrafficAggregate/2.2.8'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:

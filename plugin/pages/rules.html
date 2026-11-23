@@ -103,12 +103,67 @@
     .rule-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
     .rule-filters {
       display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin-top: 10px;
-      padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft);
+      padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
     }
     .rule-filters .field { min-width: 170px; flex: 1; }
     .rule-form { display: grid; grid-template-columns: 150px minmax(160px, 1fr) minmax(160px, 1fr) 150px auto; gap: 8px; align-items: end; margin-top: 10px; }
+    .form-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .form-panel .grid { margin-top: 0; }
+    .form-panel .field { min-width: 0; }
+    .form-panel textarea { min-height: 62px; resize: vertical; }
+    .field-actions { display: flex; align-items: end; gap: 8px; }
+    .field-actions select { flex: 1; }
+    .check-inline { display: flex; align-items: center; gap: 6px; color: var(--text); }
+    .check-inline.hidden { display: none; }
+    .node-specific { display: block; }
+    .node-specific.hidden, [data-node-types].hidden, [data-group-types].hidden { display: none; }
+    select[multiple] { min-height: 132px; }
     .rule-form .field { gap: 4px; }
     .rule-table-wrap { margin-top: 12px; max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    .rule-tree {
+      margin-top: 12px; max-height: 620px; overflow: auto;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+    }
+    .rule-type, .rule-group { border-bottom: 1px solid var(--line); }
+    .rule-type:last-child, .rule-group:last-child { border-bottom: 0; }
+    .rule-type > summary, .rule-group > summary {
+      display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+      cursor: pointer; list-style: none; user-select: none;
+    }
+    .rule-type > summary::-webkit-details-marker, .rule-group > summary::-webkit-details-marker { display: none; }
+    .rule-type > summary::before, .rule-group > summary::before {
+      content: "›"; display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; flex: 0 0 18px; border-radius: 6px;
+      color: var(--muted); background: var(--soft); transition: transform .15s ease;
+    }
+    .rule-type[open] > summary::before, .rule-group[open] > summary::before { transform: rotate(90deg); }
+    .rule-type > summary:hover, .rule-group > summary:hover { background: var(--soft); }
+    .rule-type-name { font-weight: 700; font-size: 13px; }
+    .rule-type-counts { margin-left: auto; color: var(--muted); font-size: 11px; text-align: right; }
+    .rule-type-body { padding: 0 12px 12px 42px; }
+    .rule-group {
+      margin-top: 8px; border: 1px solid var(--line); border-radius: 10px;
+      overflow: hidden; background: var(--panel);
+    }
+    .rule-group > summary { padding: 9px 12px; background: rgba(127, 127, 127, .035); }
+    .rule-group-name { font-weight: 650; font-size: 12px; overflow-wrap: anywhere; }
+    .rule-group-count { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .rule-group-body { border-top: 1px solid var(--line); }
+    .rule-item {
+      display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(110px, 180px) auto;
+      grid-template-areas: "index value options actions";
+      gap: 10px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--line);
+    }
+    .rule-item:first-child { border-top: 0; }
+    .rule-item:hover { background: rgba(127, 127, 127, .028); }
+    .rule-index {
+      grid-area: index; color: var(--muted);
+      font: 11px/1.7 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+    .rule-value { grid-area: value; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+    .rule-options { grid-area: options; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .rule-item > .rule-actions { grid-area: actions; }
+    .rule-empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 13px; }
     table { width: 100%; border-collapse: collapse; min-width: 760px; }
     th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 12px; }
     th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); font-size: 11px; }
@@ -146,6 +201,15 @@
       body { padding: 14px; }
       .workspace, .grid { grid-template-columns: 1fr; }
       .rule-form { grid-template-columns: 1fr 1fr; }
+      .rule-type-body { padding-left: 14px; }
+      .rule-item {
+        grid-template-columns: 34px minmax(0, 1fr);
+        grid-template-areas:
+          "index value"
+          "index options"
+          "index actions";
+      }
+      .rule-options.is-empty { display: none; }
     }
   </style>
 </head>
@@ -153,7 +217,7 @@
   <main class="shell">
     <div class="eyebrow">PROXY TRAFFIC · RULE STUDIO</div>
     <h1>分流规则</h1>
-    <p class="subtitle">自动识别订阅规则文件，按规则表可视化修改，也可以直接编辑 YAML。保存前会校验 YAML，并自动备份原文件。</p>
+    <p class="subtitle">自动识别订阅规则文件，可视化编辑规则、节点和策略组，也可以直接编辑 YAML。保存前会校验 YAML，并自动备份原文件。</p>
 
     <section class="panel">
       <div class="panel-head">
@@ -220,13 +284,20 @@
 
           <div class="tabs">
             <button id="tabVisual" class="tab active" type="button">可视规则</button>
+            <button id="tabNodes" class="tab" type="button">节点</button>
+            <button id="tabGroups" class="tab" type="button">分组</button>
             <button id="tabRaw" class="tab" type="button">YAML 源码</button>
           </div>
+          <div id="structuredHint" class="hint" hidden></div>
 
           <div id="visualPane">
             <div class="rule-toolbar">
               <div class="hint" id="ruleSummary">—</div>
-              <button id="refreshFile" class="small" type="button">重新读取文件</button>
+              <div class="actions" style="margin:0">
+                <button id="expandRuleTypes" class="small" type="button">展开全部</button>
+                <button id="collapseRuleTypes" class="small" type="button">收起全部</button>
+                <button id="refreshFile" class="small" type="button">重新读取文件</button>
+              </div>
             </div>
             <div class="rule-filters">
               <div class="field">
@@ -249,8 +320,11 @@
                 <input id="ruleValue" placeholder="example.com / acl_openai / CN">
               </div>
               <div class="field">
-                <label for="ruleTarget">新增目标</label>
-                <select id="ruleTarget"></select>
+                <label for="ruleTarget">目标策略组</label>
+                <div class="field-actions">
+                  <select id="ruleTarget"></select>
+                  <button id="newGroupFromRule" class="small" type="button">＋ 新建分组</button>
+                </div>
               </div>
               <div class="field">
                 <label for="ruleOptions">选项</label>
@@ -261,12 +335,183 @@
                 <button id="cancelRule" type="button" hidden>取消</button>
               </div>
             </div>
+            <div id="ruleRows" class="rule-tree"></div>
+          </div>
+
+          <div id="nodesPane" hidden>
+            <div class="rule-toolbar">
+              <div class="hint" id="nodeSummary">—</div>
+              <button id="addNode" type="button">新增节点</button>
+            </div>
+            <div id="nodeForm" class="form-panel" hidden>
+              <div class="grid">
+                <div class="field">
+                  <label for="nodeName">节点名称</label>
+                  <input id="nodeName" placeholder="例如：🇩🇪 法兰克福">
+                </div>
+                <div class="field">
+                  <label for="nodeType">协议</label>
+                  <select id="nodeType">
+                    <option value="anytls">AnyTLS</option>
+                    <option value="vless">VLESS</option>
+                    <option value="vmess">VMess</option>
+                    <option value="trojan">Trojan</option>
+                    <option value="ss">Shadowsocks</option>
+                    <option value="hysteria2">Hysteria2</option>
+                    <option value="tuic">TUIC</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="nodeServer">服务器</label>
+                  <input id="nodeServer" placeholder="example.com 或 IP">
+                </div>
+                <div class="field">
+                  <label for="nodePort">端口</label>
+                  <input id="nodePort" type="number" min="1" max="65535" value="443">
+                </div>
+                <div class="field node-specific" data-node-types="vless,vmess,tuic">
+                  <label for="nodeUuid">UUID</label>
+                  <input id="nodeUuid" placeholder="UUID">
+                </div>
+                <div class="field node-specific" data-node-types="trojan,ss,hysteria2,tuic,anytls">
+                  <label for="nodePassword">密码</label>
+                  <input id="nodePassword" placeholder="password">
+                </div>
+                <div class="field node-specific" data-node-types="vless,vmess,trojan">
+                  <label for="nodeNetwork">传输</label>
+                  <select id="nodeNetwork">
+                    <option value="tcp">TCP</option>
+                    <option value="ws">WebSocket</option>
+                    <option value="grpc">gRPC</option>
+                  </select>
+                </div>
+                <div class="field" data-node-types="anytls,vless,vmess,trojan,hysteria2,tuic">
+                  <label for="nodeSecurity">TLS</label>
+                  <select id="nodeSecurity">
+                    <option value="none">none</option>
+                    <option value="tls">TLS</option>
+                    <option value="reality">REALITY</option>
+                  </select>
+                </div>
+                <div class="field" data-node-types="anytls,vless,vmess,trojan,hysteria2,tuic">
+                  <label for="nodeSni">SNI</label>
+                  <input id="nodeSni" placeholder="sni.example.com">
+                </div>
+                <div class="field" data-node-types="anytls,vless,vmess,trojan,hysteria2,tuic">
+                  <label for="nodeFingerprint">客户端指纹</label>
+                  <input id="nodeFingerprint" placeholder="chrome">
+                </div>
+                <div class="field node-specific" data-node-types="ss,vmess">
+                  <label for="nodeCipher">Cipher / Method</label>
+                  <input id="nodeCipher" placeholder="auto / chacha20-ietf-poly1305">
+                </div>
+                <div class="field node-specific" data-node-types="vmess">
+                  <label for="nodeAlterId">alterId</label>
+                  <input id="nodeAlterId" type="number" min="0" value="0">
+                </div>
+                <div class="field node-specific" data-node-types="vless">
+                  <label for="nodeFlow">VLESS Flow</label>
+                  <input id="nodeFlow" placeholder="xtls-rprx-vision">
+                </div>
+                <div class="field node-specific" data-node-types="vless">
+                  <label for="nodePublicKey">Reality 公钥</label>
+                  <input id="nodePublicKey" placeholder="public key">
+                </div>
+                <div class="field node-specific" data-node-types="vless">
+                  <label for="nodeShortId">Reality shortId</label>
+                  <input id="nodeShortId" placeholder="abcd1234">
+                </div>
+                <div class="field node-specific" data-node-types="vless,vmess,trojan">
+                  <label for="nodeHost">WS Host</label>
+                  <input id="nodeHost" placeholder="cdn.example.com">
+                </div>
+                <div class="field node-specific" data-node-types="vless,vmess,trojan">
+                  <label for="nodePath">WS / HTTP Path</label>
+                  <input id="nodePath" placeholder="/">
+                </div>
+                <div class="field node-specific" data-node-types="vless,vmess,trojan">
+                  <label for="nodeService">gRPC Service</label>
+                  <input id="nodeService" placeholder="service-name">
+                </div>
+                <div class="field" data-node-types="anytls,vless,vmess,trojan,hysteria2,tuic">
+                  <label for="nodeAlpn">ALPN（逗号分隔）</label>
+                  <input id="nodeAlpn" placeholder="h2,http/1.1">
+                </div>
+                <div class="field">
+                  <label for="nodeDialer">前置节点（dialer-proxy）</label>
+                  <select id="nodeDialer"><option value="">无</option></select>
+                </div>
+              </div>
+              <div class="actions">
+                <label class="check check-inline" data-node-types="anytls,vless,vmess,trojan,hysteria2,tuic">
+                  <input id="nodeSkipCert" type="checkbox"> 跳过证书校验
+                </label>
+                <label class="check check-inline">
+                  <input id="nodeUdp" type="checkbox" checked> 启用 UDP
+                </label>
+                <button id="saveNode" class="primary" type="button">保存节点</button>
+                <button id="cancelNode" type="button">取消</button>
+              </div>
+            </div>
             <div class="rule-table-wrap">
               <table>
                 <thead>
-                  <tr><th>#</th><th>类型</th><th>匹配内容</th><th>目标</th><th>选项</th><th>操作</th></tr>
+                  <tr><th>#</th><th>名称</th><th>类型</th><th>服务器</th><th>端口</th><th>操作</th></tr>
                 </thead>
-                <tbody id="ruleRows"></tbody>
+                <tbody id="nodeRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="groupsPane" hidden>
+            <div class="rule-toolbar">
+              <div class="hint" id="groupSummary">—</div>
+              <button id="addGroup" type="button">新增分组</button>
+            </div>
+            <div id="groupForm" class="form-panel" hidden>
+              <div class="grid">
+                <div class="field">
+                  <label for="groupName">分组名称</label>
+                  <input id="groupName" placeholder="例如：🚀 节点选择">
+                </div>
+                <div class="field">
+                  <label for="groupType">分组类型</label>
+                  <select id="groupType">
+                    <option value="select">select</option>
+                    <option value="url-test">url-test</option>
+                    <option value="fallback">fallback</option>
+                    <option value="load-balance">load-balance</option>
+                    <option value="relay">relay</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="groupProxies">成员（节点或已有分组，可多选）</label>
+                  <select id="groupProxies" multiple></select>
+                </div>
+                <div class="field" data-group-types="url-test,fallback,load-balance">
+                  <label for="groupUrl">测速 URL（url-test/fallback）</label>
+                  <input id="groupUrl" placeholder="https://www.gstatic.com/generate_204">
+                </div>
+                <div class="field" data-group-types="url-test,fallback,load-balance">
+                  <label for="groupInterval">间隔秒数</label>
+                  <input id="groupInterval" type="number" min="1" value="300">
+                </div>
+                <div class="field" data-group-types="url-test,fallback">
+                  <label for="groupTolerance">容差毫秒</label>
+                  <input id="groupTolerance" type="number" min="0" value="50">
+                </div>
+              </div>
+              <div class="actions">
+                <button id="saveGroup" class="primary" type="button">保存分组</button>
+                <button id="cancelGroup" type="button">取消</button>
+              </div>
+            </div>
+            <div class="rule-table-wrap">
+              <table>
+                <thead>
+                  <tr><th>#</th><th>名称</th><th>类型</th><th>成员</th><th>操作</th></tr>
+                </thead>
+                <tbody id="groupRows"></tbody>
               </table>
             </div>
           </div>
@@ -302,10 +547,23 @@
       "fileList", "editorArea",
       "currentTitle", "currentMeta", "copyUrl", "clientSelect", "filePath",
       "subscriptionUrl",
-      "tabVisual", "tabRaw", "visualPane", "rawPane", "ruleSummary",
-      "refreshFile", "filterType", "filterTarget", "clearFilters",
+      "tabVisual", "tabNodes", "tabGroups", "tabRaw",
+      "visualPane", "nodesPane", "groupsPane", "rawPane", "ruleSummary",
+      "structuredHint",
+      "refreshFile", "expandRuleTypes", "collapseRuleTypes",
+      "filterType", "filterTarget", "clearFilters",
       "ruleForm", "ruleType", "ruleValue", "ruleTarget",
+      "newGroupFromRule",
       "ruleOptions", "applyRule", "cancelRule", "ruleRows", "parseRaw",
+      "nodeSummary", "addNode", "nodeForm", "nodeName", "nodeType", "nodeServer",
+      "nodePort", "nodeUuid", "nodePassword", "nodeNetwork", "nodeSecurity",
+      "nodeSni", "nodeFingerprint", "nodeCipher", "nodeAlterId", "nodeFlow",
+      "nodePublicKey", "nodeShortId", "nodeHost", "nodePath", "nodeService",
+      "nodeAlpn", "nodeDialer", "nodeSkipCert", "nodeUdp", "saveNode",
+      "cancelNode", "nodeRows",
+      "groupSummary", "addGroup", "groupForm", "groupName", "groupType",
+      "groupProxies", "groupUrl", "groupInterval", "groupTolerance",
+      "saveGroup", "cancelGroup", "groupRows",
       "yamlEditor", "yamlHighlight", "saveRules", "reloadFile",
       "editorStatus", "editorResult",
     ].map((id) => [id, document.getElementById(id)]));
@@ -315,7 +573,8 @@
       "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6",
       "GEOIP", "GEOSITE", "RULE-SET", "IP-ASN", "SRC-IP-CIDR",
       "SRC-PORT", "DST-PORT", "PROCESS-NAME", "PROCESS-PATH",
-      "URL-REGEX", "DOMAIN-REGEX", "NETWORK", "MATCH", "FINAL",
+      "URL-REGEX", "DOMAIN-REGEX", "NETWORK", "AND", "OR", "NOT",
+      "SUB-RULE", "MATCH", "FINAL",
     ];
 
     let state = { files: [], root: "", roots: [], glob: "", public_base: "", target: {} };
@@ -324,17 +583,39 @@
     let content = "";
     let rules = [];
     let groups = [];
+    let proxies = [];
+    let proxyGroups = [];
     let providers = [];
     let editingIndex = -1;
+    let editingNodeIndex = -1;
+    let editingGroupIndex = -1;
+    let pendingGroupTarget = "";
     let rawDirty = false;
     let activeTab = "visual";
     let visibleRuleCount = 0;
+    let structuredEditingSupported = false;
+    const expandedRuleTypes = new Set();
+    const expandedRuleGroups = new Set();
     const fileCache = new Map();
 
     function setStatus(message, kind, target) {
       const node = target || el.ruleStatus;
       node.textContent = message || "";
       node.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function setStructuredEditingAvailability(supported) {
+      structuredEditingSupported = !!supported;
+      el.structuredHint.hidden = structuredEditingSupported;
+      el.structuredHint.textContent = structuredEditingSupported
+        ? ""
+        : "当前服务端未返回节点和分组数据。请同步更新 proxy-traffic server 到 2.2.8 后刷新页面，再使用节点/分组编辑。";
+      el.tabNodes.title = structuredEditingSupported
+        ? ""
+        : "需要同步更新 proxy-traffic server";
+      el.tabGroups.title = structuredEditingSupported
+        ? ""
+        : "需要同步更新 proxy-traffic server";
     }
 
     function escapeHtml(value) {
@@ -458,8 +739,8 @@
       el.currentMeta.textContent = [
         formatBytes(file.size),
         "更新 " + formatTime(file.mtime_ms),
-        (file.proxy_count || 0) + " 个节点",
-        (file.group_count || 0) + " 个策略组",
+        (proxies.length || file.proxy_count || 0) + " 个节点",
+        (proxyGroups.length || file.group_count || 0) + " 个策略组",
         (file.provider_count || 0) + " 个规则提供者",
       ].join(" · ");
       el.filePath.textContent = file.path || "—";
@@ -470,7 +751,7 @@
       el.ruleSummary.textContent =
         (visible === rules.length ? visible : visible + " / " + rules.length) + " 条规则 · " +
         (groups.length || 0) + " 个策略组 · " +
-        (providers.length || 0) + " 个规则提供者";
+        (providers.length || 0) + " 个规则提供者 · 点击类型逐级展开";
     }
 
     function highlightValue(value) {
@@ -546,8 +827,56 @@
       if (selected) el.ruleTarget.value = selected;
     }
 
+    function splitRuleParts(rule) {
+      const parts = [];
+      let current = "";
+      let depth = 0;
+      let quote = "";
+      let escaped = false;
+      for (const char of String(rule)) {
+        if (escaped) {
+          current += char;
+          escaped = false;
+          continue;
+        }
+        if (quote && char === "\\") {
+          current += char;
+          escaped = true;
+          continue;
+        }
+        if (quote) {
+          current += char;
+          if (char === quote) quote = "";
+          continue;
+        }
+        if (char === '"' || char === "'") {
+          quote = char;
+          current += char;
+          continue;
+        }
+        if (char === "(" || char === "[" || char === "{") {
+          depth += 1;
+          current += char;
+          continue;
+        }
+        if (char === ")" || char === "]" || char === "}") {
+          depth = Math.max(0, depth - 1);
+          current += char;
+          continue;
+        }
+        if (char === "," && depth === 0) {
+          parts.push(current.trim());
+          current = "";
+          continue;
+        }
+        current += char;
+      }
+      parts.push(current.trim());
+      return parts;
+    }
+
     function parseRule(rule) {
-      const parts = String(rule).split(",");
+      const parts = splitRuleParts(rule);
       const type = (parts[0] || "").trim().toUpperCase();
       if (type === "MATCH" || type === "FINAL") {
         return {
@@ -570,6 +899,26 @@
         return [parts.type, parts.target, ...parts.options].filter(Boolean).join(",");
       }
       return [parts.type, parts.value, parts.target, ...parts.options].filter(Boolean).join(",");
+    }
+
+    function renameReferences(oldName, newName) {
+      if (!oldName || !newName || oldName === newName) return;
+      proxies.forEach((proxy) => {
+        if (proxy && proxy["dialer-proxy"] === oldName) proxy["dialer-proxy"] = newName;
+      });
+      proxyGroups.forEach((group) => {
+        if (!Array.isArray(group && group.proxies)) return;
+        group.proxies = group.proxies.map((name) => name === oldName ? newName : name);
+      });
+      rules = rules.map((rule) => {
+        const parts = parseRule(rule);
+        if (parts.target !== oldName) return rule;
+        if (expandedRuleGroups.delete(ruleGroupKey(parts.type, oldName))) {
+          expandedRuleGroups.add(ruleGroupKey(parts.type, newName));
+        }
+        parts.target = newName;
+        return buildRule(parts);
+      });
     }
 
     function renderFilterSelects() {
@@ -614,50 +963,616 @@
       el.filterTarget.value = targetValues.includes(currentTarget) ? currentTarget : "";
     }
 
+    function ruleGroupKey(type, target) {
+      return String(type || "") + "\u001f" + String(target || "");
+    }
+
+    function filteredRuleEntries() {
+      const typeFilter = el.filterType.value;
+      const targetFilter = el.filterTarget.value;
+      const entries = [];
+      rules.forEach((rule, index) => {
+        const parts = parseRule(rule);
+        if (typeFilter && parts.type !== typeFilter) return;
+        if (targetFilter && parts.target !== targetFilter) return;
+        entries.push({rule, index, parts});
+      });
+      return entries;
+    }
+
+    function expandFilteredRules() {
+      if (!el.filterType.value && !el.filterTarget.value) return;
+      filteredRuleEntries().forEach(({parts}) => {
+        expandedRuleTypes.add(parts.type);
+        expandedRuleGroups.add(ruleGroupKey(parts.type, parts.target));
+      });
+    }
+
+    function applyRuleFilters() {
+      if (el.filterType.value || el.filterTarget.value) {
+        expandFilteredRules();
+      } else {
+        expandedRuleTypes.clear();
+        expandedRuleGroups.clear();
+      }
+      renderRules();
+    }
+
+    function ruleActionCell(index) {
+      const action = document.createElement("div");
+      action.className = "rule-actions";
+      const up = document.createElement("button");
+      up.type = "button"; up.className = "small"; up.textContent = "↑";
+      up.title = "在全量规则中上移";
+      up.disabled = index === 0 || isFinalRule(rules[index]) || isFinalRule(rules[index - 1]);
+      up.addEventListener("click", () => moveRule(index, -1));
+      const down = document.createElement("button");
+      down.type = "button"; down.className = "small"; down.textContent = "↓";
+      down.title = "在全量规则中下移";
+      down.disabled =
+        index === rules.length - 1 ||
+        isFinalRule(rules[index]) ||
+        isFinalRule(rules[index + 1]);
+      down.addEventListener("click", () => moveRule(index, 1));
+      const edit = document.createElement("button");
+      edit.type = "button"; edit.className = "small"; edit.textContent = "编辑";
+      edit.addEventListener("click", () => editRule(index));
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.className = "small danger"; remove.textContent = "删除";
+      remove.addEventListener("click", () => deleteRule(index));
+      action.append(up, down, edit, remove);
+      return action;
+    }
+
+    function renderRuleItem(entry) {
+      const {rule, index, parts} = entry;
+      const item = document.createElement("div");
+      item.className = "rule-item";
+      item.dataset.ruleIndex = String(index);
+      item.title = rule;
+
+      const number = document.createElement("span");
+      number.className = "rule-index";
+      number.textContent = "#" + (index + 1);
+
+      const value = document.createElement("div");
+      value.className = "rule-value";
+      value.textContent = parts.value || (
+        parts.type === "MATCH" || parts.type === "FINAL"
+          ? "所有剩余流量"
+          : "—"
+      );
+
+      const options = document.createElement("div");
+      options.className = "rule-options";
+      if (!parts.options.length) options.classList.add("is-empty");
+      options.textContent = parts.options.length ? parts.options.join(" · ") : "—";
+
+      item.append(number, value, options, ruleActionCell(index));
+      return item;
+    }
+
     function renderRules() {
       renderFilterSelects();
       el.ruleRows.replaceChildren();
+      const entries = filteredRuleEntries();
+      visibleRuleCount = entries.length;
+      if (!entries.length) {
+        const empty = document.createElement("div");
+        empty.className = "rule-empty";
+        empty.textContent = "当前筛选条件下没有规则";
+        el.ruleRows.appendChild(empty);
+        updateSummary();
+        return;
+      }
+
+      const byType = new Map();
+      entries.forEach((entry) => {
+        const type = entry.parts.type || "UNKNOWN";
+        if (!byType.has(type)) byType.set(type, []);
+        byType.get(type).push(entry);
+      });
+
       const fragment = document.createDocumentFragment();
-      visibleRuleCount = 0;
-      rules.forEach((rule, index) => {
-        const parts = parseRule(rule);
-        if (el.filterType.value && parts.type !== el.filterType.value) return;
-        if (el.filterTarget.value && parts.target !== el.filterTarget.value) return;
-        visibleRuleCount += 1;
-        const row = document.createElement("tr");
-        const number = document.createElement("td");
-        number.textContent = String(index + 1);
-        const type = document.createElement("td");
-        type.innerHTML = '<span class="badge accent">' + escapeHtml(parts.type) + "</span>";
-        const value = document.createElement("td");
-        value.className = "rule-text";
-        value.textContent = parts.value || "—";
-        const target = document.createElement("td");
-        target.textContent = parts.target || "—";
-        const options = document.createElement("td");
-        options.textContent = parts.options.join(", ") || "—";
-        const action = document.createElement("td");
-        action.className = "rule-actions";
-        const up = document.createElement("button");
-        up.type = "button"; up.className = "small"; up.textContent = "↑";
-        up.disabled = index === 0;
-        up.addEventListener("click", () => moveRule(index, -1));
-        const down = document.createElement("button");
-        down.type = "button"; down.className = "small"; down.textContent = "↓";
-        down.disabled = index === rules.length - 1;
-        down.addEventListener("click", () => moveRule(index, 1));
-        const edit = document.createElement("button");
-        edit.type = "button"; edit.className = "small"; edit.textContent = "编辑";
-        edit.addEventListener("click", () => editRule(index));
-        const remove = document.createElement("button");
-        remove.type = "button"; remove.className = "small danger"; remove.textContent = "删除";
-        remove.addEventListener("click", () => deleteRule(index));
-        action.append(up, down, edit, remove);
-        row.append(number, type, value, target, options, action);
-        fragment.appendChild(row);
+      byType.forEach((typeEntries, type) => {
+        const byGroup = new Map();
+        typeEntries.forEach((entry) => {
+          const target = entry.parts.target || "(未指定分组)";
+          if (!byGroup.has(target)) byGroup.set(target, []);
+          byGroup.get(target).push(entry);
+        });
+
+        const typeDetails = document.createElement("details");
+        typeDetails.className = "rule-type";
+        typeDetails.dataset.ruleType = type;
+        typeDetails.open = expandedRuleTypes.has(type);
+        typeDetails.addEventListener("toggle", () => {
+          if (typeDetails.open) expandedRuleTypes.add(type);
+          else expandedRuleTypes.delete(type);
+        });
+
+        const typeSummary = document.createElement("summary");
+        const typeName = document.createElement("span");
+        typeName.className = "rule-type-name";
+        typeName.textContent = type;
+        const typeCounts = document.createElement("span");
+        typeCounts.className = "rule-type-counts";
+        typeCounts.textContent = typeEntries.length + " 条规则 · " + byGroup.size + " 个分组";
+        typeSummary.append(typeName, typeCounts);
+
+        const typeBody = document.createElement("div");
+        typeBody.className = "rule-type-body";
+        byGroup.forEach((groupEntries, target) => {
+          const groupKey = ruleGroupKey(type, target === "(未指定分组)" ? "" : target);
+          const groupDetails = document.createElement("details");
+          groupDetails.className = "rule-group";
+          groupDetails.dataset.ruleGroup = target;
+          groupDetails.open = expandedRuleGroups.has(groupKey);
+          groupDetails.addEventListener("toggle", () => {
+            if (groupDetails.open) expandedRuleGroups.add(groupKey);
+            else expandedRuleGroups.delete(groupKey);
+          });
+
+          const groupSummary = document.createElement("summary");
+          const groupName = document.createElement("span");
+          groupName.className = "rule-group-name";
+          groupName.textContent = target;
+          const groupCount = document.createElement("span");
+          groupCount.className = "rule-group-count";
+          groupCount.textContent = groupEntries.length + " 条";
+          groupSummary.append(groupName, groupCount);
+
+          const groupBody = document.createElement("div");
+          groupBody.className = "rule-group-body";
+          groupEntries.forEach((entry) => groupBody.appendChild(renderRuleItem(entry)));
+          groupDetails.append(groupSummary, groupBody);
+          typeBody.appendChild(groupDetails);
+        });
+        typeDetails.append(typeSummary, typeBody);
+        fragment.appendChild(typeDetails);
       });
       el.ruleRows.appendChild(fragment);
       updateSummary();
+    }
+
+    function setOrDelete(target, key, value) {
+      if (value === "" || value === undefined || value === null) delete target[key];
+      else target[key] = value;
+    }
+
+    function renderNodeDialerOptions(selected) {
+      el.nodeDialer.replaceChildren();
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "无";
+      el.nodeDialer.appendChild(none);
+      proxies.forEach((proxy, index) => {
+        if (index === editingNodeIndex) return;
+        const name = String(proxy && proxy.name || "").trim();
+        if (!name) return;
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        el.nodeDialer.appendChild(option);
+      });
+      el.nodeDialer.value = selected || "";
+    }
+
+    function syncNodeFieldVisibility() {
+      const type = el.nodeType.value;
+      el.nodeForm.querySelectorAll("[data-node-types]").forEach((field) => {
+        const types = String(field.getAttribute("data-node-types") || "").split(",");
+        field.classList.toggle("hidden", !types.includes(type));
+      });
+      const realityOption = el.nodeSecurity.querySelector('option[value="reality"]');
+      if (realityOption) realityOption.disabled = type !== "vless";
+      if (type === "ss") {
+        el.nodeSecurity.value = "none";
+      } else if (["anytls", "hysteria2", "tuic"].includes(type)) {
+        el.nodeSecurity.value = "tls";
+      } else if (type !== "vless" && el.nodeSecurity.value === "reality") {
+        el.nodeSecurity.value = "tls";
+      }
+    }
+
+    function resetNodeForm() {
+      editingNodeIndex = -1;
+      el.nodeForm.hidden = true;
+      el.nodeName.value = "";
+      el.nodeType.value = "anytls";
+      el.nodeServer.value = "";
+      el.nodePort.value = "443";
+      el.nodeUuid.value = "";
+      el.nodePassword.value = "";
+      el.nodeSni.value = "";
+      el.nodeSecurity.value = "tls";
+      el.nodePublicKey.value = "";
+      el.nodeShortId.value = "";
+      el.nodeNetwork.value = "tcp";
+      el.nodeHost.value = "";
+      el.nodePath.value = "";
+      el.nodeService.value = "";
+      el.nodeFlow.value = "";
+      el.nodeFingerprint.value = "chrome";
+      el.nodeCipher.value = "";
+      el.nodeAlterId.value = "0";
+      el.nodeAlpn.value = "";
+      el.nodeSkipCert.checked = false;
+      el.nodeUdp.checked = true;
+      renderNodeDialerOptions("");
+      syncNodeFieldVisibility();
+    }
+
+    function startNodeForm(index) {
+      if (!structuredEditingSupported) return;
+      const proxy = index >= 0 ? proxies[index] : null;
+      editingNodeIndex = proxy ? index : -1;
+      el.nodeForm.hidden = false;
+      el.nodeName.value = proxy ? String(proxy.name || "") : "";
+      const type = proxy ? String(proxy.type || "anytls") : "anytls";
+      if (!Array.from(el.nodeType.options).some((option) => option.value === type)) {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        el.nodeType.appendChild(option);
+      }
+      el.nodeType.value = type;
+      el.nodeServer.value = proxy ? String(proxy.server || "") : "";
+      el.nodePort.value = proxy && proxy.port ? String(proxy.port) : "443";
+      el.nodeUuid.value = proxy ? String(proxy.uuid || proxy.id || "") : "";
+      el.nodePassword.value = proxy ? String(proxy.password || "") : "";
+      el.nodeSni.value = proxy ? String(proxy.sni || proxy.servername || "") : "";
+      const security = proxy && proxy["reality-opts"] ? "reality" :
+        (proxy && (proxy.tls || ["anytls", "hysteria2", "tuic"].includes(type)) ? "tls" : "none");
+      el.nodeSecurity.value = security;
+      const reality = proxy && proxy["reality-opts"] && typeof proxy["reality-opts"] === "object"
+        ? proxy["reality-opts"] : {};
+      el.nodePublicKey.value = String(reality["public-key"] || reality.publicKey || "");
+      el.nodeShortId.value = String(reality["short-id"] || reality.shortId || "");
+      el.nodeNetwork.value = String(proxy && proxy.network || "tcp");
+      const ws = proxy && proxy["ws-opts"] && typeof proxy["ws-opts"] === "object" ? proxy["ws-opts"] : {};
+      const headers = ws.headers && typeof ws.headers === "object" ? ws.headers : {};
+      el.nodeHost.value = String(headers.Host || headers.host || proxy && proxy.host || "");
+      el.nodePath.value = String(ws.path || proxy && proxy.path || "");
+      const grpc = proxy && proxy["grpc-opts"] && typeof proxy["grpc-opts"] === "object" ? proxy["grpc-opts"] : {};
+      el.nodeService.value = String(grpc["grpc-service-name"] || grpc.serviceName || "");
+      el.nodeFlow.value = String(proxy && proxy.flow || "");
+      el.nodeFingerprint.value = String(proxy && proxy["client-fingerprint"] || "");
+      el.nodeCipher.value = String(proxy && proxy.cipher || "");
+      el.nodeAlterId.value = String(proxy && proxy.alterId || 0);
+      el.nodeAlpn.value = Array.isArray(proxy && proxy.alpn) ? proxy.alpn.join(",") : String(proxy && proxy.alpn || "");
+      el.nodeSkipCert.checked = !!(proxy && proxy["skip-cert-verify"]);
+      el.nodeUdp.checked = !proxy || proxy.udp !== false;
+      renderNodeDialerOptions(proxy && proxy["dialer-proxy"] || "");
+      syncNodeFieldVisibility();
+      el.nodeForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function saveNodeForm() {
+      if (!structuredEditingSupported) {
+        setStatus("请先同步更新 proxy-traffic server。", "error", el.editorStatus);
+        return;
+      }
+      const wasEditing = editingNodeIndex >= 0;
+      const oldName = wasEditing ? String(proxies[editingNodeIndex].name || "").trim() : "";
+      const previousTarget = el.ruleTarget.value;
+      const name = el.nodeName.value.trim();
+      const type = el.nodeType.value;
+      const server = el.nodeServer.value.trim();
+      const port = Number(el.nodePort.value);
+      if (!name || !server || !Number.isInteger(port) || port < 1 || port > 65535) {
+        setStatus("节点名称、服务器和端口不能为空，端口需在 1-65535。", "error", el.editorStatus);
+        return;
+      }
+      if (proxies.some((proxy, index) =>
+        index !== editingNodeIndex && String(proxy && proxy.name || "").trim() === name
+      )) {
+        setStatus("节点名称“" + name + "”已存在，请换一个名称。", "error", el.editorStatus);
+        return;
+      }
+      const uuid = el.nodeUuid.value.trim();
+      const password = el.nodePassword.value.trim();
+      if (["vless", "vmess", "tuic"].includes(type) && !uuid) {
+        setStatus("当前协议必须填写 UUID。", "error", el.editorStatus);
+        return;
+      }
+      if (["trojan", "ss", "hysteria2", "tuic", "anytls"].includes(type) && !password) {
+        setStatus("当前协议必须填写密码。", "error", el.editorStatus);
+        return;
+      }
+      if (type === "ss" && !el.nodeCipher.value.trim()) {
+        setStatus("Shadowsocks 必须填写 Cipher。", "error", el.editorStatus);
+        return;
+      }
+      if (el.nodeSecurity.value === "reality" && !el.nodePublicKey.value.trim()) {
+        setStatus("REALITY 必须填写公钥。", "error", el.editorStatus);
+        return;
+      }
+      const base = editingNodeIndex >= 0 ? { ...proxies[editingNodeIndex] } : {};
+      const node = { ...base, name, type, server, port };
+      const security = ["anytls", "hysteria2", "tuic"].includes(type)
+        ? "tls"
+        : el.nodeSecurity.value;
+      const reality = {
+        "public-key": el.nodePublicKey.value.trim(),
+        "short-id": el.nodeShortId.value.trim(),
+      };
+      if (security === "reality") {
+        node.tls = true;
+        node["reality-opts"] = reality;
+      } else {
+        delete node["reality-opts"];
+        if (security === "tls") node.tls = true;
+        else delete node.tls;
+      }
+      const sni = el.nodeSni.value.trim();
+      delete node.sni;
+      delete node.servername;
+      if (type !== "ss" && sni) {
+        if (["vless", "vmess"].includes(type)) node.servername = sni;
+        else node.sni = sni;
+      }
+      if (type === "ss") delete node["client-fingerprint"];
+      else setOrDelete(node, "client-fingerprint", el.nodeFingerprint.value.trim());
+      const network = el.nodeNetwork.value;
+      if (["vless", "vmess", "trojan"].includes(type)) {
+        node.network = network;
+        if (network === "ws") {
+          node["ws-opts"] = {
+            path: el.nodePath.value.trim() || "/",
+            headers: el.nodeHost.value.trim() ? { Host: el.nodeHost.value.trim() } : {},
+          };
+          delete node["grpc-opts"];
+        } else if (network === "grpc") {
+          node["grpc-opts"] = {"grpc-service-name": el.nodeService.value.trim()};
+          delete node["ws-opts"];
+        } else {
+          delete node["ws-opts"];
+          delete node["grpc-opts"];
+        }
+      } else {
+        delete node.network;
+        delete node["ws-opts"];
+        delete node["grpc-opts"];
+      }
+      if (["vless", "vmess", "tuic"].includes(type)) setOrDelete(node, "uuid", uuid);
+      else delete node.uuid;
+      if (["trojan", "ss", "hysteria2", "tuic", "anytls"].includes(type)) {
+        setOrDelete(node, "password", password);
+      } else {
+        delete node.password;
+      }
+      if (["ss", "vmess"].includes(type)) {
+        const cipher = el.nodeCipher.value.trim() || (type === "vmess" ? "auto" : "");
+        setOrDelete(node, "cipher", cipher);
+      } else {
+        delete node.cipher;
+      }
+      if (type === "vmess") node.alterId = Number(el.nodeAlterId.value) || 0;
+      else delete node.alterId;
+      if (type === "vless") setOrDelete(node, "flow", el.nodeFlow.value.trim());
+      else delete node.flow;
+      const alpn = el.nodeAlpn.value.split(",").map((item) => item.trim()).filter(Boolean);
+      if (type !== "ss" && alpn.length) node.alpn = alpn;
+      else delete node.alpn;
+      node.udp = el.nodeUdp.checked;
+      if (type === "ss") delete node["skip-cert-verify"];
+      else node["skip-cert-verify"] = el.nodeSkipCert.checked;
+      if (el.nodeDialer.value) node["dialer-proxy"] = el.nodeDialer.value;
+      else delete node["dialer-proxy"];
+      if (editingNodeIndex >= 0) proxies[editingNodeIndex] = node;
+      else proxies.push(node);
+      const renamed = wasEditing && oldName && oldName !== name;
+      if (renamed) renameReferences(oldName, name);
+      syncYamlSections(renamed ? ["proxies", "proxy-groups", "rules"] : ["proxies"]);
+      renderNodes();
+      renderGroups();
+      renderRules();
+      renderTargetSelect(renamed && previousTarget === oldName ? name : previousTarget);
+      resetNodeForm();
+      setStatus("节点已" + (wasEditing ? "保存" : "新增") + "，尚未保存到文件。", "ok", el.editorStatus);
+    }
+
+    function renderNodes() {
+      el.nodeRows.replaceChildren();
+      const fragment = document.createDocumentFragment();
+      proxies.forEach((proxy, index) => {
+        const row = document.createElement("tr");
+        const number = document.createElement("td");
+        number.textContent = String(index + 1);
+        const name = document.createElement("td");
+        name.textContent = String(proxy.name || "—");
+        const type = document.createElement("td");
+        type.innerHTML = '<span class="badge accent">' + escapeHtml(proxy.type || "—") + "</span>";
+        const server = document.createElement("td");
+        server.textContent = String(proxy.server || "—");
+        const port = document.createElement("td");
+        port.textContent = String(proxy.port || "—");
+        const action = document.createElement("td");
+        action.className = "rule-actions";
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.className = "small"; edit.textContent = "编辑";
+        edit.addEventListener("click", () => startNodeForm(index));
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.className = "small danger"; remove.textContent = "删除";
+        remove.addEventListener("click", () => {
+          if (!confirm("删除节点“" + (proxy.name || index + 1) + "”？")) return;
+          proxies.splice(index, 1);
+          syncYamlSections(["proxies"]);
+          renderNodes();
+          renderGroups();
+          renderRules();
+          renderTargetSelect(el.ruleTarget.value);
+        });
+        action.append(edit, remove);
+        row.append(number, name, type, server, port, action);
+        fragment.appendChild(row);
+      });
+      el.nodeRows.appendChild(fragment);
+      el.nodeSummary.textContent = proxies.length + " 个节点";
+    }
+
+    function renderGroupProxyOptions(selected, currentName) {
+      el.groupProxies.replaceChildren();
+      const names = proxies.map((proxy) => String(proxy.name || "")).filter(Boolean);
+      proxyGroups.forEach((group) => {
+        const name = String(group.name || "");
+        if (name && name !== currentName) names.push(name);
+      });
+      specialTargets
+        .filter((name) => name !== "PASS")
+        .forEach((name) => names.push(name));
+      [...new Set(names)].forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        el.groupProxies.appendChild(option);
+      });
+      const wanted = new Set(Array.isArray(selected) ? selected : []);
+      Array.from(el.groupProxies.options).forEach((option) => {
+        option.selected = wanted.has(option.value);
+      });
+    }
+
+    function syncGroupFieldVisibility() {
+      const type = el.groupType.value;
+      el.groupForm.querySelectorAll("[data-group-types]").forEach((field) => {
+        const types = String(field.getAttribute("data-group-types") || "").split(",");
+        field.classList.toggle("hidden", !types.includes(type));
+      });
+    }
+
+    function resetGroupForm() {
+      editingGroupIndex = -1;
+      el.groupForm.hidden = true;
+      el.groupName.value = "";
+      el.groupType.value = "select";
+      el.groupUrl.value = "";
+      el.groupInterval.value = "300";
+      el.groupTolerance.value = "50";
+      renderGroupProxyOptions([], "");
+      syncGroupFieldVisibility();
+    }
+
+    function startGroupForm(index) {
+      if (!structuredEditingSupported) return;
+      const group = index >= 0 ? proxyGroups[index] : null;
+      editingGroupIndex = group ? index : -1;
+      el.groupForm.hidden = false;
+      el.groupName.value = group ? String(group.name || "") : "";
+      const type = group ? String(group.type || "select") : "select";
+      if (!Array.from(el.groupType.options).some((option) => option.value === type)) {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        el.groupType.appendChild(option);
+      }
+      el.groupType.value = type;
+      el.groupUrl.value = group ? String(group.url || "") : "";
+      el.groupInterval.value = String(group && group.interval || 300);
+      el.groupTolerance.value = String(group && group.tolerance || 50);
+      renderGroupProxyOptions(group && group.proxies || [], group && group.name || "");
+      syncGroupFieldVisibility();
+      el.groupForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function saveGroupForm() {
+      if (!structuredEditingSupported) {
+        setStatus("请先同步更新 proxy-traffic server。", "error", el.editorStatus);
+        return;
+      }
+      const wasEditing = editingGroupIndex >= 0;
+      const oldName = wasEditing ? String(proxyGroups[editingGroupIndex].name || "").trim() : "";
+      const previousTarget = el.ruleTarget.value;
+      const name = el.groupName.value.trim();
+      const type = el.groupType.value;
+      const members = Array.from(el.groupProxies.selectedOptions).map((option) => option.value);
+      if (!name) {
+        setStatus("分组名称不能为空。", "error", el.editorStatus);
+        return;
+      }
+      if (proxyGroups.some((group, index) =>
+        index !== editingGroupIndex && String(group && group.name || "").trim() === name
+      )) {
+        setStatus("分组名称“" + name + "”已存在，请换一个名称。", "error", el.editorStatus);
+        return;
+      }
+      if (!members.length) {
+        setStatus("分组至少选择一个节点或子分组。", "error", el.editorStatus);
+        return;
+      }
+      const base = editingGroupIndex >= 0 ? { ...proxyGroups[editingGroupIndex] } : {};
+      const group = { ...base, name, type, proxies: members };
+      if (["url-test", "fallback", "load-balance"].includes(type)) {
+        group.url = el.groupUrl.value.trim() || "https://www.gstatic.com/generate_204";
+        group.interval = Number(el.groupInterval.value) || 300;
+      } else {
+        delete group.url;
+        delete group.interval;
+      }
+      if (type === "url-test" || type === "fallback") {
+        group.tolerance = Number(el.groupTolerance.value) || 50;
+      } else {
+        delete group.tolerance;
+      }
+      if (editingGroupIndex >= 0) proxyGroups[editingGroupIndex] = group;
+      else proxyGroups.push(group);
+      const renamed = wasEditing && oldName && oldName !== name;
+      if (renamed) renameReferences(oldName, name);
+      groups = proxyGroups.map((item) => String(item.name || "")).filter(Boolean);
+      syncYamlSections(renamed ? ["proxy-groups", "rules"] : ["proxy-groups"]);
+      renderGroups();
+      renderNodes();
+      renderRules();
+      const nextTarget = renamed && previousTarget === oldName ? name : previousTarget;
+      renderTargetSelect(groups.includes(nextTarget) ? nextTarget : (groups[0] || "DIRECT"));
+      const addedName = name;
+      resetGroupForm();
+      if (pendingGroupTarget) {
+        pendingGroupTarget = "";
+        switchTab("visual");
+        el.ruleTarget.value = addedName;
+      }
+      setStatus("分组已保存，尚未保存到文件。", "ok", el.editorStatus);
+    }
+
+    function renderGroups() {
+      el.groupRows.replaceChildren();
+      const fragment = document.createDocumentFragment();
+      proxyGroups.forEach((group, index) => {
+        const row = document.createElement("tr");
+        const number = document.createElement("td");
+        number.textContent = String(index + 1);
+        const name = document.createElement("td");
+        name.textContent = String(group.name || "—");
+        const type = document.createElement("td");
+        type.innerHTML = '<span class="badge accent">' + escapeHtml(group.type || "—") + "</span>";
+        const members = document.createElement("td");
+        members.className = "rule-text";
+        members.textContent = Array.isArray(group.proxies) ? group.proxies.join("、") : "—";
+        const action = document.createElement("td");
+        action.className = "rule-actions";
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.className = "small"; edit.textContent = "编辑";
+        edit.addEventListener("click", () => startGroupForm(index));
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.className = "small danger"; remove.textContent = "删除";
+        remove.addEventListener("click", () => {
+          if (!confirm("删除分组“" + (group.name || index + 1) + "”？引用它的规则不会自动修改。")) return;
+          proxyGroups.splice(index, 1);
+          groups = proxyGroups.map((item) => String(item.name || "")).filter(Boolean);
+          syncYamlSections(["proxy-groups"]);
+          renderGroups();
+          renderNodes();
+          renderRules();
+          renderTargetSelect(groups[0] || "DIRECT");
+        });
+        action.append(edit, remove);
+        row.append(number, name, type, members, action);
+        fragment.appendChild(row);
+      });
+      el.groupRows.appendChild(fragment);
+      el.groupSummary.textContent = proxyGroups.length + " 个分组";
     }
 
     function replaceRulesBlock(text, nextRules) {
@@ -665,7 +1580,7 @@
       const lines = text.split(/\r?\n/);
       let start = -1;
       for (let index = 0; index < lines.length; index += 1) {
-        if (/^rules:\s*(?:#.*)?$/.test(lines[index])) {
+        if (/^rules:\s*(?:\[\])?\s*(?:#.*)?$/.test(lines[index])) {
           start = index;
           break;
         }
@@ -677,7 +1592,7 @@
       }
       let end = lines.length;
       for (let index = start + 1; index < lines.length; index += 1) {
-        if (/^[A-Za-z0-9_.-]+:\s*(?:#.*)?$/.test(lines[index])) {
+        if (/^[^\s#-][^:]*:/.test(lines[index])) {
           end = index;
           break;
         }
@@ -688,6 +1603,124 @@
       }
       lines.splice(start, end - start, ...block);
       return lines.join(eol);
+    }
+
+    function yamlKey(key) {
+      return /^[A-Za-z0-9_.-]+$/.test(key) ? key : JSON.stringify(key);
+    }
+
+    function yamlScalar(value) {
+      if (value === undefined) return "null";
+      if (value === null) return "null";
+      if (typeof value === "boolean" || typeof value === "number") return String(value);
+      if (typeof value === "string") return JSON.stringify(value);
+      return JSON.stringify(value);
+    }
+
+    function yamlIsMapping(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function yamlMappingLines(value, indent) {
+      const pad = " ".repeat(indent);
+      const lines = [];
+      Object.entries(value).forEach(([key, item]) => {
+        if (item === undefined) return;
+        const name = yamlKey(key);
+        if (Array.isArray(item)) {
+          if (!item.length) {
+            lines.push(pad + name + ": []");
+            return;
+          }
+          lines.push(pad + name + ":");
+          lines.push(...yamlSequenceLines(item, indent + 2));
+          return;
+        }
+        if (yamlIsMapping(item)) {
+          if (!Object.keys(item).length) {
+            lines.push(pad + name + ": {}");
+            return;
+          }
+          lines.push(pad + name + ":");
+          lines.push(...yamlMappingLines(item, indent + 2));
+          return;
+        }
+        lines.push(pad + name + ": " + yamlScalar(item));
+      });
+      return lines;
+    }
+
+    function yamlSequenceLines(items, indent) {
+      const pad = " ".repeat(indent);
+      const lines = [];
+      items.forEach((item) => {
+        if (item === undefined) {
+          lines.push(pad + "- null");
+          return;
+        }
+        if (Array.isArray(item)) {
+          const nested = yamlSequenceLines(item, indent + 2);
+          if (nested.length) {
+            lines.push(pad + "- " + nested[0].slice(indent + 2));
+            lines.push(...nested.slice(1));
+          }
+          return;
+        }
+        if (yamlIsMapping(item)) {
+          const nested = yamlMappingLines(item, indent + 2);
+          if (!nested.length) {
+            lines.push(pad + "- {}");
+            return;
+          }
+          lines.push(pad + "- " + nested[0].slice(indent + 2));
+          lines.push(...nested.slice(1));
+          return;
+        }
+        lines.push(pad + "- " + yamlScalar(item));
+      });
+      return lines;
+    }
+
+    function yamlSection(key, items) {
+      const values = Array.isArray(items) ? items : [];
+      if (!values.length) return [key + ": []"];
+      return [key + ":"].concat(yamlSequenceLines(values, 0));
+    }
+
+    function replaceSectionBlock(text, key, items) {
+      const eol = text.includes("\r\n") ? "\r\n" : "\n";
+      const lines = text.split(/\r?\n/);
+      const sectionPattern = new RegExp("^" + key + ":\\s*(?:\\[\\])?\\s*(?:#.*)?$");
+      const start = lines.findIndex((line) => sectionPattern.test(line));
+      const block = yamlSection(key, items);
+      if (start === -1) {
+        const suffix = lines.length && lines[lines.length - 1] === "" ? [] : [""];
+        return lines.concat(suffix, block).join(eol);
+      }
+      let end = lines.length;
+      for (let index = start + 1; index < lines.length; index += 1) {
+        if (/^[^\s#-][^:]*:/.test(lines[index]) || /^---\s*$/.test(lines[index])) {
+          end = index;
+          break;
+        }
+      }
+      lines.splice(start, end - start, ...block);
+      return lines.join(eol);
+    }
+
+    function syncYamlSections(sections) {
+      if (sections.includes("proxies")) {
+        content = replaceSectionBlock(content, "proxies", proxies);
+      }
+      if (sections.includes("proxy-groups")) {
+        content = replaceSectionBlock(content, "proxy-groups", proxyGroups);
+      }
+      if (sections.includes("rules")) {
+        content = replaceRulesBlock(content, rules);
+      }
+      el.yamlEditor.value = content;
+      rawDirty = false;
+      refreshHighlight();
     }
 
     function syncRawFromRules() {
@@ -772,6 +1805,8 @@
         if (matchIndex >= 0) rules.splice(matchIndex, 0, rule);
         else rules.push(rule);
       }
+      expandedRuleTypes.add(type);
+      expandedRuleGroups.add(ruleGroupKey(type, target));
       syncRawFromRules();
       renderRules();
       resetRuleForm();
@@ -779,7 +1814,11 @@
     }
 
     async function switchTab(tab) {
-      if (tab === "visual" && rawDirty) {
+      if ((tab === "nodes" || tab === "groups") && !structuredEditingSupported) {
+        setStatus("节点和分组编辑需要同步更新 proxy-traffic server 到 2.2.8。", "error", el.editorStatus);
+        return;
+      }
+      if (tab !== "raw" && rawDirty) {
         try {
           await parseRaw();
         } catch (error) {
@@ -789,10 +1828,16 @@
       }
       activeTab = tab;
       el.tabVisual.classList.toggle("active", tab === "visual");
+      el.tabNodes.classList.toggle("active", tab === "nodes");
+      el.tabGroups.classList.toggle("active", tab === "groups");
       el.tabRaw.classList.toggle("active", tab === "raw");
       el.visualPane.hidden = tab !== "visual";
+      el.nodesPane.hidden = tab !== "nodes";
+      el.groupsPane.hidden = tab !== "groups";
       el.rawPane.hidden = tab !== "raw";
       if (tab === "raw") refreshHighlight();
+      if (tab === "nodes") renderNodes();
+      if (tab === "groups") renderGroups();
     }
 
     async function parseRaw() {
@@ -804,10 +1849,20 @@
       });
       content = el.yamlEditor.value;
       rules = Array.isArray(payload.rules) ? payload.rules : [];
-      groups = Array.isArray(payload.groups) ? payload.groups : [];
+      proxies = Array.isArray(payload.proxies) ? payload.proxies : [];
+      proxyGroups = Array.isArray(payload.proxy_groups) ? payload.proxy_groups : [];
+      setStructuredEditingAvailability(
+        Array.isArray(payload.proxies) && Array.isArray(payload.proxy_groups)
+      );
+      groups = proxyGroups
+        .map((item) => item && typeof item === "object" ? String(item.name || "") : "")
+        .filter(Boolean);
+      if (!groups.length && Array.isArray(payload.groups)) groups = payload.groups;
       providers = Array.isArray(payload.providers) ? payload.providers : [];
       rawDirty = false;
       renderRules();
+      renderNodes();
+      renderGroups();
       resetRuleForm();
       setStatus("YAML 校验通过，已刷新 " + rules.length + " 条规则。", "ok", el.editorStatus);
     }
@@ -823,20 +1878,36 @@
     }
 
     async function applyFilePayload(payload) {
+      const previousFileId = currentFile ? currentFile.id : "";
       currentFile = payload.file;
+      const switchingFile = !previousFileId || previousFileId !== currentFile.id;
       const fileIndex = state.files.findIndex((item) => item.id === currentFile.id);
       if (fileIndex >= 0) {
         state.files[fileIndex] = currentFile;
       }
       content = payload.content || "";
       rules = Array.isArray(payload.rules) ? payload.rules : [];
-      groups = Array.isArray(payload.groups) ? payload.groups : [];
+      proxies = Array.isArray(payload.proxies) ? payload.proxies : [];
+      proxyGroups = Array.isArray(payload.proxy_groups) ? payload.proxy_groups : [];
+      setStructuredEditingAvailability(
+        Array.isArray(payload.proxies) && Array.isArray(payload.proxy_groups)
+      );
+      groups = proxyGroups
+        .map((item) => item && typeof item === "object" ? String(item.name || "") : "")
+        .filter(Boolean);
+      if (!groups.length && Array.isArray(payload.groups)) groups = payload.groups;
       providers = Array.isArray(payload.providers) ? payload.providers : [];
+      if (switchingFile) {
+        expandedRuleTypes.clear();
+        expandedRuleGroups.clear();
+      }
       rawDirty = false;
       el.editorArea.hidden = false;
       el.yamlEditor.value = content;
       refreshHighlight();
       renderRules();
+      renderNodes();
+      renderGroups();
       renderRuleTypeSelect();
       renderTargetSelect(groups[0] || "DIRECT");
       resetRuleForm();
@@ -1057,14 +2128,41 @@
     el.refreshFile.addEventListener("click", () => {
       if (currentFile) openFile(currentFile.id, true);
     });
+    el.expandRuleTypes.addEventListener("click", () => {
+      filteredRuleEntries().forEach(({parts}) => {
+        expandedRuleTypes.add(parts.type);
+        expandedRuleGroups.add(ruleGroupKey(parts.type, parts.target));
+      });
+      renderRules();
+    });
+    el.collapseRuleTypes.addEventListener("click", () => {
+      expandedRuleTypes.clear();
+      expandedRuleGroups.clear();
+      renderRules();
+    });
     el.tabVisual.addEventListener("click", () => switchTab("visual"));
+    el.tabNodes.addEventListener("click", () => switchTab("nodes"));
+    el.tabGroups.addEventListener("click", () => switchTab("groups"));
     el.tabRaw.addEventListener("click", () => switchTab("raw"));
-    el.filterType.addEventListener("change", renderRules);
-    el.filterTarget.addEventListener("change", renderRules);
+    el.addNode.addEventListener("click", () => startNodeForm(-1));
+    el.saveNode.addEventListener("click", saveNodeForm);
+    el.cancelNode.addEventListener("click", resetNodeForm);
+    el.nodeType.addEventListener("change", syncNodeFieldVisibility);
+    el.addGroup.addEventListener("click", () => startGroupForm(-1));
+    el.saveGroup.addEventListener("click", saveGroupForm);
+    el.cancelGroup.addEventListener("click", resetGroupForm);
+    el.groupType.addEventListener("change", syncGroupFieldVisibility);
+    el.newGroupFromRule.addEventListener("click", async () => {
+      pendingGroupTarget = "rule";
+      await switchTab("groups");
+      startGroupForm(-1);
+    });
+    el.filterType.addEventListener("change", applyRuleFilters);
+    el.filterTarget.addEventListener("change", applyRuleFilters);
     el.clearFilters.addEventListener("click", () => {
       el.filterType.value = "";
       el.filterTarget.value = "";
-      renderRules();
+      applyRuleFilters();
     });
     el.ruleType.addEventListener("change", () => {
       el.ruleValue.disabled = el.ruleType.value === "MATCH" || el.ruleType.value === "FINAL";
