@@ -1,0 +1,35 @@
+name: komari-proxy-traffic
+
+services:
+  server:
+    build: .
+    image: komari-proxy-traffic:local
+    restart: unless-stopped
+    environment:
+      PROXY_TRAFFIC_ROLE: server
+      PROXY_TRAFFIC_BIND: 0.0.0.0
+      PROXY_TRAFFIC_PORT: 9460
+      PROXY_TRAFFIC_DB: /var/lib/proxy-traffic/aggregate.db
+      PROXY_TRAFFIC_INGEST_TOKEN: ${PROXY_TRAFFIC_INGEST_TOKEN:?set PROXY_TRAFFIC_INGEST_TOKEN in .env}
+      IPINFO_TOKEN: ${IPINFO_TOKEN:-}
+      PROXY_TRAFFIC_GEOIP_CITY: /opt/proxy-traffic/GeoLite2-City.mmdb
+      PROXY_TRAFFIC_GEOIP_ASN: /opt/proxy-traffic/GeoLite2-ASN.mmdb
+      PROXY_TRAFFIC_GEOIP_CITY_FALLBACK: /opt/proxy-traffic/dbip-city-lite.mmdb
+    ports:
+      - "${PROXY_TRAFFIC_HOST_IP:-172.17.0.1}:9460:9460"
+    volumes:
+      - proxy-traffic-data:/var/lib/proxy-traffic
+      - ./docker/geoip:/opt/proxy-traffic:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9460/healthz', timeout=2)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  proxy-traffic-data:

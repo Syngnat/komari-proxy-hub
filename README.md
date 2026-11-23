@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：1.8.0
+> 当前版本：1.9.0
 
 ## 功能
 
@@ -80,6 +80,42 @@ Xray 的 access log 记录“谁在什么时候连接了哪个域名”，但不
 如果 Xray 必须作为客户端直连的入口，则只能接受降级模式（连接次数/用户总量，不含每域名精确流量），或在 Xray 侧做自定义字节日志改造。
 
 ## 安装
+
+### Docker 一键部署
+
+聚合服务在 Komari 主机上运行：
+
+```bash
+cp .env.example .env
+openssl rand -hex 32
+# 把输出写入 .env 的 PROXY_TRAFFIC_INGEST_TOKEN
+docker compose up -d --build
+docker compose logs -f server
+```
+
+默认把聚合服务发布到 Docker 网桥网关 `172.17.0.1:9460`，与插件默认的 `BACKEND` 一致，不会监听公网 IP。如果宿主机的 Docker 网桥不是 `172.17.0.1`，修改 `.env` 的 `PROXY_TRAFFIC_HOST_IP`，并同步修改 `plugin/script.js` 的 `BACKEND`。
+
+GeoIP 数据库可选，放在 `docker/geoip/`：
+
+```text
+docker/geoip/GeoLite2-City.mmdb
+docker/geoip/GeoLite2-ASN.mmdb
+docker/geoip/dbip-city-lite.mmdb
+```
+
+代理节点用 collector 容器：
+
+```bash
+mkdir -p collector-config
+cp collector/config.example.json collector-config/config.json
+# 编辑 config.json，填入 ingest_url、node_id、node_name
+# 把 ingest token 写入 collector-config/ingest-token
+docker compose -f docker-compose.collector.yml up -d --build
+```
+
+Clash 模式把 `clash-secret` 放进 `collector-config/`；Xray 模式把 `mode` 改为 `xray`、`access_log` 改为 `/var/log/xray/access.log`，并取消 `docker-compose.collector.yml` 里 access log 挂载的注释。
+
+collector 使用 `network_mode: host`，因此 `clash_api: http://127.0.0.1:9090` 可以直接访问宿主机上的 Clash API；该配置适用于 Linux。Docker 方式仍需要从 Komari 插件市场安装插件。
 
 ### 1. 部署聚合服务
 

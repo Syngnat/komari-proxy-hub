@@ -12,12 +12,12 @@
         "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数、域名和活跃时间。",
         "en": "Aggregates proxy traffic by source IP. Clash-compatible cores provide exact traffic; Xray access logs provide connection counts, domains and activity."
       },
-      "version": "1.8.0",
+      "version": "1.9.0",
       "author": "Syngnat",
       "komari": ">=1.6.0",
       "url": "https://github.com/Syngnat/komari-proxy-traffic",
-      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v1.8.0/komari-proxy-traffic-v1.8.0.zip",
-      "sha256": "de7bd66a57016018f39ef8bf442dcde4003a571c06e41226d570eb1f300c53e0"
+      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v1.9.0/komari-proxy-traffic-v1.9.0.zip",
+      "sha256": "14fc14559d5a2216b4e83254f8179f82d6a4fd646a4be5cf3e6bb7bba2133a06"
     }
   ]
 }

@@ -1,0 +1,12 @@
+.git
+.env
+*.db
+*.db-*
+*.mmdb
+*.log
+__pycache__/
+*.pyc
+collector-config/
+plugin/
+.gitignore
+.DS_Store

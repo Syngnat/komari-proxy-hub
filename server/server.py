@@ -117,7 +117,9 @@ def now_ms() -> int:
 
 
 def load_token() -> str:
-    token = TOKEN_PATH.read_text(encoding='utf-8').strip()
+    token = os.environ.get('PROXY_TRAFFIC_INGEST_TOKEN', '').strip()
+    if not token:
+        token = TOKEN_PATH.read_text(encoding='utf-8').strip()
     if len(token) < 24:
         raise RuntimeError('ingest token is too short')
     return token

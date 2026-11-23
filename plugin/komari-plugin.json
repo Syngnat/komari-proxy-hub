@@ -9,7 +9,7 @@
     "en": "Aggregates proxy traffic by source IP. Clash-compatible cores provide exact traffic; Xray access logs provide connection counts, domains and activity."
   },
   "author": "Syngnat",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",
