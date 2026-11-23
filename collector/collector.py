@@ -19,6 +19,7 @@ CONFIG_PATH = Path('/etc/proxy-traffic/config.json')
 DEFAULT_DB = Path('/var/lib/proxy-traffic/traffic.db')
 POLL_SECONDS = 1.0
 UPLOAD_SECONDS = 30.0
+DEFAULT_PROTOCOLS = ('*',)
 FLOW_RETENTION_SECONDS = 24 * 60 * 60
 MINUTE_RETENTION_SECONDS = 30 * 24 * 60 * 60
 MINUTE_DETAIL_SECONDS = 2 * 24 * 60 * 60
@@ -49,6 +50,17 @@ def load_config() -> dict:
         ).strip()
     if not config['ingest_token']:
         raise RuntimeError('ingest token is empty')
+    protocols = config.get('protocols', list(DEFAULT_PROTOCOLS))
+    if protocols is None:
+        protocols = list(DEFAULT_PROTOCOLS)
+    if not isinstance(protocols, list) or not protocols:
+        raise RuntimeError('protocols must be a non-empty array or ["*"]')
+    normalized_protocols = []
+    for value in protocols:
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError('protocols entries must be non-empty strings')
+        normalized_protocols.append(value.strip().lower())
+    config['protocols'] = normalized_protocols
     return config
 
 
@@ -180,7 +192,12 @@ def fetch_connections(api_url: str, secret: str) -> list[dict]:
     return connections if isinstance(connections, list) else []
 
 
-def record_poll(conn: sqlite3.Connection, connections: list[dict], now_ms: int) -> None:
+def record_poll(
+    conn: sqlite3.Connection,
+    connections: list[dict],
+    now_ms: int,
+    protocols: list[str],
+) -> None:
     minute = (now_ms // 60000) * 60000
     seen: set[str] = set()
     rows = conn.execute(
@@ -196,7 +213,11 @@ def record_poll(conn: sqlite3.Connection, connections: list[dict], now_ms: int) 
             metadata = item.get('metadata') or {}
             source_ip = valid_source(metadata.get('sourceIP'))
             conn_type = str(metadata.get('type') or item.get('type') or '')
-            if not conn_id or not source_ip or not conn_type.startswith('anytls'):
+            if not conn_id or not source_ip:
+                continue
+            if '*' not in protocols and not any(
+                conn_type.startswith(protocol) for protocol in protocols
+            ):
                 continue
             site = normalize_site(metadata.get('host'), metadata.get('destinationIP'))
             seen.add(conn_id)
@@ -400,7 +421,7 @@ def poll_loop(config: dict, db_path: Path) -> None:
     while not stop_event.is_set():
         try:
             connections = fetch_connections(config['clash_api'], secret)
-            record_poll(conn, connections, int(time.time() * 1000))
+            record_poll(conn, connections, int(time.time() * 1000), config['protocols'])
             if consecutive_errors:
                 log.info('Clash API recovered')
             consecutive_errors = 0

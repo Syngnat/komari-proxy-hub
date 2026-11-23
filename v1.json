@@ -9,15 +9,15 @@
       "short": "proxy-traffic",
       "category": "monitoring",
       "description": {
-        "zh_CN": "按来源 IP 汇总 AnyTLS 流量，显示地区、在线状态、疑似设备、目标站点、访问最多的 IP，以及每个 IP 的域名明细。",
-        "en": "Aggregates AnyTLS traffic by source IP with region, online state, inferred devices, target sites, top source IP, and per-IP domain details."
+        "zh_CN": "按来源 IP 汇总代理流量，支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议，显示地区、在线状态、疑似设备、目标站点和每个 IP 的域名明细。",
+        "en": "Aggregates proxy traffic by source IP for AnyTLS, VLESS, VMess, Trojan, Shadowsocks, Hysteria, TUIC and more, with region, online state, inferred devices, target sites, and per-IP domain details."
       },
-      "version": "1.5.0",
+      "version": "1.7.0",
       "author": "Syngnat",
       "komari": ">=1.6.0",
       "url": "https://github.com/Syngnat/komari-proxy-traffic",
-      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v1.5.0/komari-proxy-traffic-v1.5.0.zip",
-      "sha256": "f88a84711b94e0baae22cf0e5391d9d0188ddbf1a233285e6b0f83c37c9443ab"
+      "download": "https://github.com/Syngnat/komari-proxy-traffic/releases/download/v1.7.0/komari-proxy-traffic-v1.7.0.zip",
+      "sha256": "7381cb7177db93b1e21f7cb448d99f37b349abc1494e2708c32e7cbf430c1571"
     }
   ]
 }

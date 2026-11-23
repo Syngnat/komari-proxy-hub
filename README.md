@@ -1,15 +1,16 @@
 # Komari 代理流量排行
 
-一个自托管的 Komari 插件：从 AnyTLS 节点的 sing-box Clash API 采集连接，按来源 IP 汇总上传、下载、在线状态、地区、目标站点，并在 Komari 管理后台展示排行榜。
+一个自托管的 Komari 插件：从 sing-box Clash API 采集代理连接，按来源 IP 汇总上传、下载、在线状态、地区、目标站点，并在 Komari 管理后台展示排行榜。支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议。
 
 > 作者：Syngnat
 >
-> 当前版本：1.5.0
+> 当前版本：1.7.0
 
 ## 功能
 
 - 按来源 IP 统计上传、下载、连接数和活跃时间
 - 支持多个节点同时显示与汇总，默认全部节点，可勾选任意节点组合
+- 默认采集全部协议，也可以用 `protocols` 只保留指定协议
 - 近 3 分钟有上报即视为在线，在线设备排在前面
 - 统计口径中的节点名称来自接口 `node_name`，不写死具体节点
 - 使用 IPinfo 解析国家、省州、城市和 ASN，本地缓存结果
@@ -24,7 +25,7 @@
 ## 架构
 
 ```text
-AnyTLS 节点
+任意代理节点
   sing-box Clash API :9090
           │
           │ collector.py（每秒轮询，按分钟聚合，30 秒上传）
@@ -41,7 +42,7 @@ Komari 管理页 iframe（traffic.html）
 
 组件说明：
 
-- `collector/collector.py`：部署在每个 AnyTLS 节点，读取 sing-box Clash API，过滤出 AnyTLS 入站连接并上传分钟级聚合数据。每个节点使用独立的 `node_id` / `node_name`。
+- `collector/collector.py`：部署在每个代理节点，读取 sing-box Clash API，默认采集全部入站连接，也支持按 `protocols` 白名单过滤。每个节点使用独立的 `node_id` / `node_name`。
 - `server/server.py`：部署在 Komari 主机，接收多个节点的数据，做 GeoIP、设备聚类、目标站点和查询接口。
 - `plugin/`：Komari 插件清单、路由代理和管理页。
 
@@ -50,7 +51,7 @@ Komari 管理页 iframe（traffic.html）
 - Komari `>= 1.6.0`
 - Python `>= 3.10`
 - 节点使用 sing-box，且开启 Clash API
-- 节点连接类型为 AnyTLS
+- 节点使用 sing-box Clash API；协议不限
 - 可选：`maxminddb` Python 包和 GeoLite2 / DB-IP 数据库
 - 可选：IPinfo token（免费额度有限）
 
@@ -115,7 +116,7 @@ sudo systemctl reload nginx
 
 ### 3. 部署采集器
 
-在每个 AnyTLS 节点执行：
+在每个代理节点执行：
 
 ```bash
 sudo useradd --system --home /var/lib/proxy-traffic --shell /usr/sbin/nologin proxy-traffic
@@ -133,6 +134,7 @@ sudo install -m 0640 -o root -g proxy-traffic collector/config.example.json /etc
   "clash_secret_file": "/etc/proxy-traffic/clash-secret",
   "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
   "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "protocols": ["*"],
   "node_id": "lax-01",
   "node_name": "LAX-01",
   "db_path": "/var/lib/proxy-traffic/traffic.db"
@@ -253,6 +255,7 @@ docker restart komari
 | `ingest_url` | 是 | 聚合服务的 ingest 地址 |
 | `ingest_token` | 二选一 | 直接填写 token，不推荐 |
 | `ingest_token_file` | 二选一 | token 文件路径，推荐 |
+| `protocols` | 否 | 协议白名单；默认 `["*"]` 表示全部协议，也可填 `["anytls", "vless"]` 等 |
 | `node_id` | 是 | 唯一、稳定、最多 64 字符 |
 | `node_name` | 是 | 页面显示名，最多 120 字符 |
 | `db_path` | 否 | 本地队列数据库，默认 `/var/lib/proxy-traffic/traffic.db` |
@@ -260,11 +263,11 @@ docker restart komari
 ## 统计口径与限制
 
 - **只采集聚合元数据**：来源 IP、上下行字节数、连接数、连接开始/结束时间、目标主机名或 IP。不采集 UA、URL 路径、查询参数、Referer 或页面内容。
-- **共享密码无法可靠区分设备**：多个用户共用同一个 AnyTLS 密码时，只能按来源 IP 和设备行为推断，不能做严格身份归属。
+- **共享密码无法可靠区分设备**：多个用户共用同一个代理密码时，只能按来源 IP 和设备行为推断，不能做严格身份归属。
 - **“疑似设备”是启发式**：依据同国家 / ASN、地区一致、活跃分钟不重叠和 IP 切换间隔聚类，必须人工确认。IP 变化频繁或多人同时在线时可能误合并。设备归并只在单个节点内生效。
 - **链式代理有观测边界**：入口节点看到的是下游入口 IP。若下游再做代理，入口节点看不到隧道内的最终域名。
 - **地区可能漂移**：IPinfo 和 GeoIP 数据库的城市级结果只作参考，尤其是移动网络、Anycast 和企业出口。
-- **只统计 AnyTLS**：采集器只处理 `type` 以 `anytls` 开头的连接。
+- **默认统计全部协议**：采集器会统计 Clash API 中所有具有公网来源 IP 的连接；如需排除某些协议，可把 `protocols` 设成前缀白名单，例如 `["anytls", "vless"]`。
 - **在线窗口为 3 分钟**：最近 3 分钟有上报视为在线；不是实时 TCP 连接数。
 - **目标站点只保留主机名 / IP**：不会还原完整 URL。
 - **数据保留 30 天**：聚合服务自动清理超过 30 天的分钟数据。

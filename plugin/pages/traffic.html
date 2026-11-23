@@ -205,7 +205,7 @@
   <main class="shell">
     <header class="hero">
       <div>
-        <div class="eyebrow"><span class="dot"></span> Proxy Traffic · AnyTLS</div>
+        <div class="eyebrow"><span class="dot"></span> Proxy Traffic · All Protocols</div>
         <h1>代理流量排行</h1>
         <p class="subtitle">按来源 IP 汇总节点出口流量，支持多节点合并查看；按地区和活跃时间推断疑似设备，动态 IP 会保留最新地址。</p>
       </div>
@@ -237,7 +237,7 @@
     </div>
 
     <div class="notice">
-      <strong>统计口径：</strong>当前接入 <span id="scopeNodes">采集器上报的 AnyTLS 节点</span>。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
+      <strong>统计口径：</strong>当前接入 <span id="scopeNodes">采集器上报的代理节点</span>。地区来自 IPinfo（本地缓存，城市仅参考）；在线指近 3 分钟有上报。“疑似设备”按同地区/ASN、活跃时段不重叠和切换间隔推断，必须人工确认。目标站点只按主机名/IP 汇总，不采集 UA、URL 路径或页面内容。
     </div>
     <div class="error" id="errorBanner" role="alert"></div>
 
@@ -334,7 +334,7 @@
       </div>
     </dialog>
 
-    <p class="footnote">仅统计采集器覆盖的 AnyTLS 入站来源 IP；地区来自 IPinfo（本地缓存），设备归并为启发式结果并可手动修正，目标站点只保留主机名/IP 聚合。链式代理场景只能看到下游入口 IP。页面每 60 秒在可见时自动刷新。</p>
+    <p class="footnote">默认统计采集器看到的全部协议入站来源 IP，可用 protocols 白名单缩小范围；地区来自 IPinfo（本地缓存），设备归并为启发式结果并可手动修正，目标站点只保留主机名/IP 聚合。链式代理场景只能看到下游入口 IP。页面每 60 秒在可见时自动刷新。</p>
   </main>
 
   <script>
