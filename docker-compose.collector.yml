@@ -1,18 +1,18 @@
-name: komari-proxy-traffic-collector
+name: komari-proxy-hub-collector
 
 services:
   collector:
     build: .
-    image: komari-proxy-traffic:local
+    image: komari-proxy-hub:local
     restart: unless-stopped
     network_mode: host
     environment:
-      PROXY_TRAFFIC_ROLE: collector
+      PROXY_HUB_ROLE: collector
     volumes:
-      - ./collector-config:/etc/proxy-traffic:ro
-      - proxy-traffic-collector-data:/var/lib/proxy-traffic
+      - ./collector-config:/etc/proxy-hub:ro
+      - proxy-hub-collector-data:/var/lib/proxy-hub
       # Xray 模式取消下一行注释；Clash 模式不需要。
       # - /var/log/xray:/var/log/xray:ro
 
 volumes:
-  proxy-traffic-collector-data:
+  proxy-hub-collector-data:

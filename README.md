@@ -1,10 +1,10 @@
-# Komari 代理流量排行
+# Komari 代理中枢
 
-一个自托管的 Komari 插件：从 Clash API 或 Xray access log 采集代理连接，按来源 IP 汇总上传、下载、在线状态、地区、目标站点，并在 Komari 管理后台展示排行榜。支持 AnyTLS、VLESS、VMess、Trojan、Shadowsocks、Hysteria、TUIC 等协议。
+一个自托管的 Komari 代理管理中枢：统一管理节点、订阅、分流规则和流量统计。支持多节点聚合、Clash API / Xray access log 统计、节点创建、长短链订阅和策略组可视化编辑。
 
 > 作者：Syngnat
 >
-> 当前插件版本：2.2.12（聚合服务兼容 2.2.8）
+> 当前版本：2.3.0
 
 ## 功能
 
@@ -36,7 +36,7 @@
           │
           │ collector.py（每秒轮询，按分钟聚合，30 秒上传）
           ▼
-HTTPS /api/proxy-traffic/ingest
+HTTPS /api/proxy-hub/ingest
           │
           ▼
 聚合服务 server.py :9460（SQLite）
@@ -50,7 +50,7 @@ HTTPS /api/proxy-traffic/ingest
 
 - `collector/collector.py`：部署在每个代理节点，读取 sing-box Clash API，默认采集全部入站连接，也支持按 `protocols` 白名单过滤。每个节点使用独立的 `node_id` / `node_name`。
 - `server/server.py`：部署在 Komari 主机，接收多个节点的数据，做 GeoIP、设备聚类、目标站点和查询接口；同时保存订阅节点、订阅令牌并生成客户端配置，读取订阅规则 YAML。
-- `plugin/`：Komari 插件清单、路由代理和管理页。公开订阅路由走 `/proxy-traffic-sub/*`，不使用 `/api` 前缀，因此 Komari 开启私有站点时仍可访问。
+- `plugin/`：Komari 插件清单、路由代理和管理页。公开订阅路由走 `/proxy-hub-sub/*`，不使用 `/api` 前缀，因此 Komari 开启私有站点时仍可访问。
 
 ## 环境要求
 
@@ -94,12 +94,12 @@ Xray 的 access log 记录“谁在什么时候连接了哪个域名”，但不
 ```bash
 cp .env.example .env
 openssl rand -hex 32
-# 把输出写入 .env 的 PROXY_TRAFFIC_INGEST_TOKEN
+# 把输出写入 .env 的 PROXY_HUB_INGEST_TOKEN
 docker compose up -d --build
 docker compose logs -f server
 ```
 
-默认把聚合服务发布到 Docker 网桥网关 `172.17.0.1:9460`，与插件默认的 `BACKEND` 一致，不会监听公网 IP。如果宿主机的 Docker 网桥不是 `172.17.0.1`，修改 `.env` 的 `PROXY_TRAFFIC_HOST_IP`，并同步修改 `plugin/script.js` 的 `BACKEND`。
+默认把聚合服务发布到 Docker 网桥网关 `172.17.0.1:9460`，与插件默认的 `BACKEND` 一致，不会监听公网 IP。如果宿主机的 Docker 网桥不是 `172.17.0.1`，修改 `.env` 的 `PROXY_HUB_HOST_IP`，并同步修改 `plugin/script.js` 的 `BACKEND`。
 
 GeoIP 数据库可选，放在 `docker/geoip/`：
 
@@ -139,11 +139,11 @@ collector 使用 `network_mode: host`，因此 `clash_api: http://127.0.0.1:9090
 
 #### Xray access log
 
-Xray 创建向导会把 `log.access` 指到页面填写的路径（默认 `/var/log/xray/access.log`）。Xray 官方安装脚本创建 `/var/log/xray` 为 `xray:xray`、权限 `700`；如果 collector 以 `proxy-traffic` 用户运行，需要让该用户能读取日志，例如：
+Xray 创建向导会把 `log.access` 指到页面填写的路径（默认 `/var/log/xray/access.log`）。Xray 官方安装脚本创建 `/var/log/xray` 为 `xray:xray`、权限 `700`；如果 collector 以 `proxy-hub` 用户运行，需要让该用户能读取日志，例如：
 
 ```bash
-sudo usermod -aG xray proxy-traffic
-sudo systemctl restart proxy-traffic-collector
+sudo usermod -aG xray proxy-hub
+sudo systemctl restart proxy-hub-collector
 ```
 
 采集器仍使用 `mode: "xray"` 降级统计连接次数和域名，不会伪造上下行字节数。
@@ -166,14 +166,14 @@ sudo systemctl restart proxy-traffic-collector
 订阅基址有两种写法：
 
 ```text
-Komari 域名：https://komari.example.com/proxy-traffic-sub
+Komari 域名：https://komari.example.com/proxy-hub-sub
 独立域名：  https://sub.example.com/sub
 ```
 
 使用 Komari 域名时不需要额外 Nginx 配置。使用独立域名时，只反代 `/sub/` 前缀到聚合服务，不要暴露 `/api` 管理接口：
 
 ```bash
-sudo install -m 0644 deploy/nginx-subscription.conf.example /etc/nginx/sites-available/proxy-traffic-sub.conf
+sudo install -m 0644 deploy/nginx-subscription.conf.example /etc/nginx/sites-available/proxy-hub-sub.conf
 ```
 
 修改 `server_name` 和证书路径后启用站点。客户端请求示例：
@@ -195,7 +195,7 @@ https://sub.example.com/sub/<token>?format=base64
 
 ### 分流规则可视化
 
-插件会自动扫描 `PROXY_TRAFFIC_RULES_DIR` 下的 `*/mihomo.yaml`（默认 `/var/www/premium`）。在 BeroHost 当前结构下会识别出两个文件：
+插件会自动扫描 `PROXY_HUB_RULES_DIR` 下的 `*/mihomo.yaml`（默认 `/var/www/premium`）。在 BeroHost 当前结构下会识别出两个文件：
 
 - 多节点文件：自用订阅，包含全部节点。
 - 单节点文件：共享订阅，只包含 PPFlight。
@@ -214,16 +214,16 @@ https://sub.example.com/sub/<token>?format=base64
 
 可视化编辑只重写本次修改对应的 `proxies:`、`proxy-groups:` 或 `rules:` 区块，其他配置保持原样；被重写区块内的注释会按 YAML 数据重新规范化。改名节点或分组时，分组成员、规则目标、节点的 `dialer-proxy` 引用会同步更新。需要保留原注释时请使用“YAML 源码”模式。
 
-规则文件由 `proxy-traffic` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面会优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；建议配置 `PROXY_TRAFFIC_RULE_TARGET_IP` / `PROXY_TRAFFIC_RULE_TARGET_NAME`，配置后规则页只显示该节点，保存接口也会拒绝其他 VPS。
+规则文件由 `proxy-hub` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面会优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；建议配置 `PROXY_HUB_RULE_TARGET_IP` / `PROXY_HUB_RULE_TARGET_NAME`，配置后规则页只显示该节点，保存接口也会拒绝其他 VPS。
 
 如果使用 Docker 部署，需要把宿主机的 `/var/www/premium` 以只读方式挂载到聚合服务容器；保存仍然走 Komari 远程执行。若目录不同，修改：
 
 ```bash
-PROXY_TRAFFIC_RULES_DIR=/实际/规则目录
-PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.example.com
-PROXY_TRAFFIC_RULE_GLOB=*/mihomo.yaml
-PROXY_TRAFFIC_RULE_TARGET_IP=规则文件所在节点IP
-PROXY_TRAFFIC_RULE_TARGET_NAME=规则文件所在节点名称
+PROXY_HUB_RULES_DIR=/实际/规则目录
+PROXY_HUB_RULE_PUBLIC_BASE=https://premium.example.com
+PROXY_HUB_RULE_GLOB=*/mihomo.yaml
+PROXY_HUB_RULE_TARGET_IP=规则文件所在节点IP
+PROXY_HUB_RULE_TARGET_NAME=规则文件所在节点名称
 ```
 
 ### 1. 部署聚合服务
@@ -231,47 +231,47 @@ PROXY_TRAFFIC_RULE_TARGET_NAME=规则文件所在节点名称
 在 Komari 主机执行：
 
 ```bash
-sudo useradd --system --home /var/lib/proxy-traffic --shell /usr/sbin/nologin proxy-traffic
-sudo install -d -m 0750 -o proxy-traffic -g proxy-traffic /var/lib/proxy-traffic /etc/proxy-traffic
-sudo install -d -m 0755 /opt/proxy-traffic
-sudo install -m 0755 server/server.py /opt/proxy-traffic/server.py
-sudo python3 -m venv /opt/proxy-traffic/venv
-sudo /opt/proxy-traffic/venv/bin/pip install -r server/requirements.txt
+sudo useradd --system --home /var/lib/proxy-hub --shell /usr/sbin/nologin proxy-hub
+sudo install -d -m 0750 -o proxy-hub -g proxy-hub /var/lib/proxy-hub /etc/proxy-hub
+sudo install -d -m 0755 /opt/proxy-hub
+sudo install -m 0755 server/server.py /opt/proxy-hub/server.py
+sudo python3 -m venv /opt/proxy-hub/venv
+sudo /opt/proxy-hub/venv/bin/pip install -r server/requirements.txt
 ```
 
 生成采集令牌。令牌至少 24 个字符：
 
 ```bash
-openssl rand -hex 32 | sudo tee /etc/proxy-traffic/ingest-token >/dev/null
-sudo chown root:proxy-traffic /etc/proxy-traffic/ingest-token
-sudo chmod 0640 /etc/proxy-traffic/ingest-token
+openssl rand -hex 32 | sudo tee /etc/proxy-hub/ingest-token >/dev/null
+sudo chown root:proxy-hub /etc/proxy-hub/ingest-token
+sudo chmod 0640 /etc/proxy-hub/ingest-token
 ```
 
 可选：把 GeoLite2 / DB-IP 数据库放到以下位置。
 
 ```text
-/opt/proxy-traffic/GeoLite2-City.mmdb
-/opt/proxy-traffic/GeoLite2-ASN.mmdb
-/opt/proxy-traffic/dbip-city-lite.mmdb
+/opt/proxy-hub/GeoLite2-City.mmdb
+/opt/proxy-hub/GeoLite2-ASN.mmdb
+/opt/proxy-hub/dbip-city-lite.mmdb
 ```
 
 安装 systemd 服务：
 
 ```bash
-sudo install -m 0644 deploy/systemd/proxy-traffic.service /etc/systemd/system/proxy-traffic.service
+sudo install -m 0644 deploy/systemd/proxy-hub.service /etc/systemd/system/proxy-hub.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now proxy-traffic
+sudo systemctl enable --now proxy-hub
 curl -s http://172.17.0.1:9460/healthz
 ```
 
-如果 Komari 的 Docker 网桥不是 `172.17.0.1`，用 `docker network inspect bridge` 确认网关地址，再修改服务里的 `PROXY_TRAFFIC_BIND` 和插件里的 `BACKEND`。
+如果 Komari 的 Docker 网桥不是 `172.17.0.1`，用 `docker network inspect bridge` 确认网关地址，再修改服务里的 `PROXY_HUB_BIND` 和插件里的 `BACKEND`。
 
 ### 2. 配置 HTTPS 入口
 
 采集器可能在其他 VPS 上，需要通过 HTTPS 把数据送到聚合服务。只暴露 ingest 路径，不要暴露查询接口：
 
 ```bash
-sudo install -m 0644 deploy/nginx-proxy-traffic.conf.example /etc/nginx/snippets/proxy-traffic.conf
+sudo install -m 0644 deploy/nginx-proxy-hub.conf.example /etc/nginx/snippets/proxy-hub.conf
 ```
 
 把 snippet 引入 Komari 站点的 `server {}`，替换域名后执行：
@@ -281,50 +281,50 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-示例配置见 `deploy/nginx-proxy-traffic.conf.example`。
+示例配置见 `deploy/nginx-proxy-hub.conf.example`。
 
 ### 3. 部署采集器
 
 在每个代理节点执行：
 
 ```bash
-sudo useradd --system --home /var/lib/proxy-traffic --shell /usr/sbin/nologin proxy-traffic
-sudo install -d -m 0750 -o proxy-traffic -g proxy-traffic /var/lib/proxy-traffic /etc/proxy-traffic
-sudo install -d -m 0755 /opt/proxy-traffic
-sudo install -m 0755 collector/collector.py /opt/proxy-traffic/collector.py
-sudo install -m 0640 -o root -g proxy-traffic collector/config.example.json /etc/proxy-traffic/config.json
+sudo useradd --system --home /var/lib/proxy-hub --shell /usr/sbin/nologin proxy-hub
+sudo install -d -m 0750 -o proxy-hub -g proxy-hub /var/lib/proxy-hub /etc/proxy-hub
+sudo install -d -m 0755 /opt/proxy-hub
+sudo install -m 0755 collector/collector.py /opt/proxy-hub/collector.py
+sudo install -m 0640 -o root -g proxy-hub collector/config.example.json /etc/proxy-hub/config.json
 ```
 
-编辑 `/etc/proxy-traffic/config.json`：
+编辑 `/etc/proxy-hub/config.json`：
 
 ```json
 {
   "mode": "clash",
   "clash_api": "http://127.0.0.1:9090",
-  "clash_secret_file": "/etc/proxy-traffic/clash-secret",
-  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
-  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "clash_secret_file": "/etc/proxy-hub/clash-secret",
+  "ingest_url": "https://komari.example.com/api/proxy-hub/ingest",
+  "ingest_token_file": "/etc/proxy-hub/ingest-token",
   "protocols": ["*"],
   "node_id": "lax-01",
   "node_name": "LAX-01",
-  "db_path": "/var/lib/proxy-traffic/traffic.db"
+  "db_path": "/var/lib/proxy-hub/traffic.db"
 }
 ```
 
-把聚合服务的 ingest token 写入 `/etc/proxy-traffic/ingest-token`，把 sing-box Clash API 的 secret 写入 `/etc/proxy-traffic/clash-secret`：
+把聚合服务的 ingest token 写入 `/etc/proxy-hub/ingest-token`，把 sing-box Clash API 的 secret 写入 `/etc/proxy-hub/clash-secret`：
 
 ```bash
-sudo chown root:proxy-traffic /etc/proxy-traffic/ingest-token /etc/proxy-traffic/clash-secret
-sudo chmod 0640 /etc/proxy-traffic/ingest-token /etc/proxy-traffic/clash-secret
+sudo chown root:proxy-hub /etc/proxy-hub/ingest-token /etc/proxy-hub/clash-secret
+sudo chmod 0640 /etc/proxy-hub/ingest-token /etc/proxy-hub/clash-secret
 ```
 
 安装并启动：
 
 ```bash
-sudo install -m 0644 deploy/systemd/proxy-traffic-collector.service /etc/systemd/system/proxy-traffic-collector.service
+sudo install -m 0644 deploy/systemd/proxy-hub-collector.service /etc/systemd/system/proxy-hub-collector.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now proxy-traffic-collector
-sudo journalctl -u proxy-traffic-collector -f
+sudo systemctl enable --now proxy-hub-collector
+sudo journalctl -u proxy-hub-collector -f
 ```
 
 `node_id` 是稳定且唯一的节点标识，发布后不要随意修改，否则历史数据会归到新节点。`node_name` 是页面显示名称。
@@ -349,11 +349,11 @@ Xray 节点使用 access log 模式，不需要 Clash API。先确保 Xray 开�
   "mode": "xray",
   "access_log": "/var/log/xray/access.log",
   "xray_log_start_at_end": true,
-  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
-  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "ingest_url": "https://komari.example.com/api/proxy-hub/ingest",
+  "ingest_token_file": "/etc/proxy-hub/ingest-token",
   "node_id": "xray-01",
   "node_name": "Xray-01",
-  "db_path": "/var/lib/proxy-traffic/traffic.db"
+  "db_path": "/var/lib/proxy-hub/traffic.db"
 }
 ```
 
@@ -368,12 +368,12 @@ Xray 节点使用 access log 模式，不需要 Clash API。先确保 Xray 开�
 ```json
 {
   "clash_api": "http://127.0.0.1:9090",
-  "clash_secret_file": "/etc/proxy-traffic/clash-secret",
-  "ingest_url": "https://komari.example.com/api/proxy-traffic/ingest",
-  "ingest_token_file": "/etc/proxy-traffic/ingest-token",
+  "clash_secret_file": "/etc/proxy-hub/clash-secret",
+  "ingest_url": "https://komari.example.com/api/proxy-hub/ingest",
+  "ingest_token_file": "/etc/proxy-hub/ingest-token",
   "node_id": "lax-01",
   "node_name": "LAX-01",
-  "db_path": "/var/lib/proxy-traffic/traffic.db"
+  "db_path": "/var/lib/proxy-hub/traffic.db"
 }
 ```
 
@@ -397,10 +397,10 @@ Xray 节点使用 access log 模式，不需要 Clash API。先确保 Xray 开�
 在 Komari 管理后台的插件市场中添加自定义源：
 
 ```text
-https://github.com/Syngnat/komari-proxy-traffic/releases/latest/download/v1.json
+https://github.com/Syngnat/komari-proxy-hub/releases/latest/download/v1.json
 ```
 
-刷新市场目录后选择“代理流量排行”，点击安装。Komari 会从本仓库的 GitHub Release 下载 ZIP，校验 SHA-256 后解压到插件目录。
+刷新市场目录后选择“代理中枢”，点击安装。Komari 会从本仓库的 GitHub Release 下载 ZIP，校验 SHA-256 后解压到插件目录。
 
 市场地址使用 GitHub Release 的 `latest/download/v1.json`，每次发版把 `v1.json` 作为 Release 资产上传，避免 Raw/jsDelivr 的 `main` 缓存读到旧版本。
 
@@ -413,7 +413,7 @@ https://github.com/Syngnat/komari-proxy-traffic/releases/latest/download/v1.json
 把 `plugin/` 下的内容复制到 Komari 数据目录：
 
 ```text
-<komari-data>/plugin/proxy-traffic/
+<komari-data>/plugin/proxy-hub/
 ├── komari-plugin.json
 ├── script.js
 └── pages/
@@ -426,19 +426,19 @@ https://github.com/Syngnat/komari-proxy-traffic/releases/latest/download/v1.json
 例如当前常见部署：
 
 ```bash
-sudo install -d -m 0755 /opt/komari/data/plugin/proxy-traffic/pages
-sudo install -m 0644 plugin/komari-plugin.json /opt/komari/data/plugin/proxy-traffic/
-sudo install -m 0644 plugin/script.js /opt/komari/data/plugin/proxy-traffic/
-sudo install -m 0644 plugin/pages/traffic.html /opt/komari/data/plugin/proxy-traffic/pages/
-sudo install -m 0644 plugin/pages/provision.html /opt/komari/data/plugin/proxy-traffic/pages/
-sudo install -m 0644 plugin/pages/subscriptions.html /opt/komari/data/plugin/proxy-traffic/pages/
-sudo install -m 0644 plugin/pages/rules.html /opt/komari/data/plugin/proxy-traffic/pages/
+sudo install -d -m 0755 /opt/komari/data/plugin/proxy-hub/pages
+sudo install -m 0644 plugin/komari-plugin.json /opt/komari/data/plugin/proxy-hub/
+sudo install -m 0644 plugin/script.js /opt/komari/data/plugin/proxy-hub/
+sudo install -m 0644 plugin/pages/traffic.html /opt/komari/data/plugin/proxy-hub/pages/
+sudo install -m 0644 plugin/pages/provision.html /opt/komari/data/plugin/proxy-hub/pages/
+sudo install -m 0644 plugin/pages/subscriptions.html /opt/komari/data/plugin/proxy-hub/pages/
+sudo install -m 0644 plugin/pages/rules.html /opt/komari/data/plugin/proxy-hub/pages/
 docker restart komari
 ```
 
-在 Komari 管理后台确认插件已加载，并打开“代理流量排行”“创建代理节点”“订阅管理”页面。
+在 Komari 管理后台确认插件已加载，并打开“流量排行”“创建代理节点”“订阅管理”“分流规则”页面。
 
-插件清单要求目录名与 `short` 一致，即 `proxy-traffic`。
+插件清单要求目录名与 `short` 一致，即 `proxy-hub`。
 
 ## 配置说明
 
@@ -446,19 +446,19 @@ docker restart komari
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PROXY_TRAFFIC_BIND` | `172.17.0.1` | 监听地址，默认使用 Docker 网桥网关 |
-| `PROXY_TRAFFIC_PORT` | `9460` | 监听端口 |
-| `PROXY_TRAFFIC_DB` | `/var/lib/proxy-traffic/aggregate.db` | 聚合数据库 |
-| `PROXY_TRAFFIC_TOKEN_FILE` | `/etc/proxy-traffic/ingest-token` | ingest bearer token 文件 |
-| `PROXY_TRAFFIC_GEOIP_CITY` | `/opt/proxy-traffic/GeoLite2-City.mmdb` | 可选城市库 |
-| `PROXY_TRAFFIC_GEOIP_ASN` | `/opt/proxy-traffic/GeoLite2-ASN.mmdb` | 可选 ASN 库 |
-| `PROXY_TRAFFIC_GEOIP_CITY_FALLBACK` | `/opt/proxy-traffic/dbip-city-lite.mmdb` | 可选城市回退库 |
-| `PROXY_TRAFFIC_SUB_BASE_URL` | 空 | 可选默认订阅基址，例如 `https://komari.example.com/proxy-traffic-sub` 或 `https://sub.example.com/sub` |
-| `PROXY_TRAFFIC_RULES_DIR` | `/var/www/premium` | 分流规则 YAML 扫描目录，匹配 `*/mihomo.yaml` |
-| `PROXY_TRAFFIC_RULE_PUBLIC_BASE` | `https://premium.syngnat.top` | 规则文件对应的订阅域名基址 |
-| `PROXY_TRAFFIC_RULE_GLOB` | `*/mihomo.yaml` | 规则目录下的文件匹配模式；其他目录结构可在规则页“识别设置”修改 |
-| `PROXY_TRAFFIC_RULE_TARGET_IP` | 空 | 规则文件所在 Komari 节点 IP；配置后不允许保存到其他 VPS |
-| `PROXY_TRAFFIC_RULE_TARGET_NAME` | 空 | 规则文件所在 Komari 节点名称匹配串 |
+| `PROXY_HUB_BIND` | `172.17.0.1` | 监听地址，默认使用 Docker 网桥网关 |
+| `PROXY_HUB_PORT` | `9460` | 监听端口 |
+| `PROXY_HUB_DB` | `/var/lib/proxy-hub/aggregate.db` | 聚合数据库 |
+| `PROXY_HUB_TOKEN_FILE` | `/etc/proxy-hub/ingest-token` | ingest bearer token 文件 |
+| `PROXY_HUB_GEOIP_CITY` | `/opt/proxy-hub/GeoLite2-City.mmdb` | 可选城市库 |
+| `PROXY_HUB_GEOIP_ASN` | `/opt/proxy-hub/GeoLite2-ASN.mmdb` | 可选 ASN 库 |
+| `PROXY_HUB_GEOIP_CITY_FALLBACK` | `/opt/proxy-hub/dbip-city-lite.mmdb` | 可选城市回退库 |
+| `PROXY_HUB_SUB_BASE_URL` | 空 | 可选默认订阅基址，例如 `https://komari.example.com/proxy-hub-sub` 或 `https://sub.example.com/sub` |
+| `PROXY_HUB_RULES_DIR` | `/var/www/premium` | 分流规则 YAML 扫描目录，匹配 `*/mihomo.yaml` |
+| `PROXY_HUB_RULE_PUBLIC_BASE` | `https://premium.syngnat.top` | 规则文件对应的订阅域名基址 |
+| `PROXY_HUB_RULE_GLOB` | `*/mihomo.yaml` | 规则目录下的文件匹配模式；其他目录结构可在规则页“识别设置”修改 |
+| `PROXY_HUB_RULE_TARGET_IP` | 空 | 规则文件所在 Komari 节点 IP；配置后不允许保存到其他 VPS |
+| `PROXY_HUB_RULE_TARGET_NAME` | 空 | 规则文件所在 Komari 节点名称匹配串 |
 | `IPINFO_TOKEN` | 空 | 可选 IPinfo token，不填也能用免费额度 |
 
 ### 采集器配置
@@ -476,7 +476,7 @@ docker restart komari
 | `protocols` | 否 | 仅 Clash 模式使用；默认 `["*"]` 表示全部协议，也可填 `["anytls", "vless"]` 等 |
 | `node_id` | 是 | 唯一、稳定、最多 64 字符 |
 | `node_name` | 是 | 页面显示名，最多 120 字符 |
-| `db_path` | 否 | 本地队列数据库，默认 `/var/lib/proxy-traffic/traffic.db` |
+| `db_path` | 否 | 本地队列数据库，默认 `/var/lib/proxy-hub/traffic.db` |
 
 ## 统计口径与限制
 
@@ -497,13 +497,13 @@ docker restart komari
 
 - SQLite 数据库包含公网 IP、目标域名和流量统计，应按敏感运维数据处理。
 - ingest token 使用 Bearer 认证和常量时间比较；请使用至少 24 字符的随机值。
-- 只通过 HTTPS 暴露 `/api/proxy-traffic/ingest`，不要把聚合服务的其他路径直接暴露到公网。
+- 只通过 HTTPS 暴露 `/api/proxy-hub/ingest`，不要把聚合服务的其他路径直接暴露到公网。
 - Komari 插件的查询路由只允许带有 `admin` 角色的管理员访问。
 - 订阅令牌是访问凭据；长链和短链都应视为密码，不要公开贴出。泄露后在“订阅管理”里轮换令牌。
-- 独立订阅域名只反代 `/sub/`，不要反代 `/api/proxy-traffic/sub/*` 管理接口。
+- 独立订阅域名只反代 `/sub/`，不要反代 `/api/proxy-hub/sub/*` 管理接口。
 - 规则页会读取并展示完整 YAML（可能包含节点凭据和管理密码），只对 Komari 管理员开放；不要截图或外传。
 - 保存规则会先备份原文件，再原子替换；保存动作通过 Komari 远程执行。执行节点选错时通常会因目标路径不存在而失败，不会自动遍历其他路径。
-- 建议保持 `UMask=0077`，并确保 `/var/lib/proxy-traffic` 仅服务用户可读。
+- 建议保持 `UMask=0077`，并确保 `/var/lib/proxy-hub` 仅服务用户可读。
 
 ## 验证
 

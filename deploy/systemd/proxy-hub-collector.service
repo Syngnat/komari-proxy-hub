@@ -1,22 +1,22 @@
 [Unit]
-Description=Komari proxy traffic collector
+Description=Komari proxy hub collector
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=proxy-traffic
-Group=proxy-traffic
+User=proxy-hub
+Group=proxy-hub
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /opt/proxy-traffic/collector.py
+ExecStart=/usr/bin/python3 /opt/proxy-hub/collector.py
 Restart=always
 RestartSec=3s
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadOnlyPaths=/opt/proxy-traffic /etc/proxy-traffic
-ReadWritePaths=/var/lib/proxy-traffic
+ReadOnlyPaths=/opt/proxy-hub /etc/proxy-hub
+ReadWritePaths=/var/lib/proxy-hub
 UMask=0077
 LimitNOFILE=65536
 

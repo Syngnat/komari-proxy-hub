@@ -14,11 +14,11 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMP = tempfile.TemporaryDirectory(prefix='komari-proxy-traffic-test-')
+TEMP = tempfile.TemporaryDirectory(prefix='komari-proxy-hub-test-')
 TOKEN_FILE = Path(TEMP.name) / 'ingest-token'
 TOKEN_FILE.write_text('x' * 32, encoding='utf-8')
-os.environ['PROXY_TRAFFIC_DB'] = str(Path(TEMP.name) / 'aggregate.db')
-os.environ['PROXY_TRAFFIC_TOKEN_FILE'] = str(TOKEN_FILE)
+os.environ['PROXY_HUB_DB'] = str(Path(TEMP.name) / 'aggregate.db')
+os.environ['PROXY_HUB_TOKEN_FILE'] = str(TOKEN_FILE)
 sys.path.insert(0, str(ROOT / 'server'))
 
 import server  # noqa: E402
@@ -51,7 +51,7 @@ class SubscriptionTests(unittest.TestCase):
         return server.save_subscription({
             'name': name,
             'node_ids': node_ids,
-            'base_url': 'https://komari.example.com/proxy-traffic-sub',
+            'base_url': 'https://komari.example.com/proxy-hub-sub',
             'format': 'auto',
         })
 
@@ -149,7 +149,7 @@ class SubscriptionTests(unittest.TestCase):
             'name': '全部节点测试',
             'node_ids': [],
             'include_all': True,
-            'base_url': 'https://komari.example.com/proxy-traffic-sub',
+            'base_url': 'https://komari.example.com/proxy-hub-sub',
         })
         row = self.get_subscription_row(subscription['id'])
         body, _, _ = server.render_subscription(row, 'links', '')

@@ -1,31 +1,31 @@
-name: komari-proxy-traffic
+name: komari-proxy-hub
 
 services:
   server:
     build: .
-    image: komari-proxy-traffic:local
+    image: komari-proxy-hub:local
     restart: unless-stopped
     environment:
-      PROXY_TRAFFIC_ROLE: server
-      PROXY_TRAFFIC_BIND: 0.0.0.0
-      PROXY_TRAFFIC_PORT: 9460
-      PROXY_TRAFFIC_DB: /var/lib/proxy-traffic/aggregate.db
-      PROXY_TRAFFIC_INGEST_TOKEN: ${PROXY_TRAFFIC_INGEST_TOKEN:?set PROXY_TRAFFIC_INGEST_TOKEN in .env}
-      PROXY_TRAFFIC_SUB_BASE_URL: ${PROXY_TRAFFIC_SUB_BASE_URL:-}
-      PROXY_TRAFFIC_RULES_DIR: ${PROXY_TRAFFIC_RULES_DIR:-/var/www/premium}
-      PROXY_TRAFFIC_RULE_PUBLIC_BASE: ${PROXY_TRAFFIC_RULE_PUBLIC_BASE:-https://premium.syngnat.top}
-      PROXY_TRAFFIC_RULE_GLOB: ${PROXY_TRAFFIC_RULE_GLOB:-*/mihomo.yaml}
-      PROXY_TRAFFIC_RULE_TARGET_IP: ${PROXY_TRAFFIC_RULE_TARGET_IP:-}
-      PROXY_TRAFFIC_RULE_TARGET_NAME: ${PROXY_TRAFFIC_RULE_TARGET_NAME:-}
+      PROXY_HUB_ROLE: server
+      PROXY_HUB_BIND: 0.0.0.0
+      PROXY_HUB_PORT: 9460
+      PROXY_HUB_DB: /var/lib/proxy-hub/aggregate.db
+      PROXY_HUB_INGEST_TOKEN: ${PROXY_HUB_INGEST_TOKEN:?set PROXY_HUB_INGEST_TOKEN in .env}
+      PROXY_HUB_SUB_BASE_URL: ${PROXY_HUB_SUB_BASE_URL:-}
+      PROXY_HUB_RULES_DIR: ${PROXY_HUB_RULES_DIR:-/var/www/premium}
+      PROXY_HUB_RULE_PUBLIC_BASE: ${PROXY_HUB_RULE_PUBLIC_BASE:-https://premium.syngnat.top}
+      PROXY_HUB_RULE_GLOB: ${PROXY_HUB_RULE_GLOB:-*/mihomo.yaml}
+      PROXY_HUB_RULE_TARGET_IP: ${PROXY_HUB_RULE_TARGET_IP:-}
+      PROXY_HUB_RULE_TARGET_NAME: ${PROXY_HUB_RULE_TARGET_NAME:-}
       IPINFO_TOKEN: ${IPINFO_TOKEN:-}
-      PROXY_TRAFFIC_GEOIP_CITY: /opt/proxy-traffic/GeoLite2-City.mmdb
-      PROXY_TRAFFIC_GEOIP_ASN: /opt/proxy-traffic/GeoLite2-ASN.mmdb
-      PROXY_TRAFFIC_GEOIP_CITY_FALLBACK: /opt/proxy-traffic/dbip-city-lite.mmdb
+      PROXY_HUB_GEOIP_CITY: /opt/proxy-hub/GeoLite2-City.mmdb
+      PROXY_HUB_GEOIP_ASN: /opt/proxy-hub/GeoLite2-ASN.mmdb
+      PROXY_HUB_GEOIP_CITY_FALLBACK: /opt/proxy-hub/dbip-city-lite.mmdb
     ports:
-      - "${PROXY_TRAFFIC_HOST_IP:-172.17.0.1}:9460:9460"
+      - "${PROXY_HUB_HOST_IP:-172.17.0.1}:9460:9460"
     volumes:
-      - proxy-traffic-data:/var/lib/proxy-traffic
-      - ./docker/geoip:/opt/proxy-traffic:ro
+      - proxy-hub-data:/var/lib/proxy-hub
+      - ./docker/geoip:/opt/proxy-hub:ro
     healthcheck:
       test:
         - CMD
@@ -38,4 +38,4 @@ services:
       start_period: 10s
 
 volumes:
-  proxy-traffic-data:
+  proxy-hub-data:

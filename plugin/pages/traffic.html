@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>代理流量排行</title>
+  <title>流量排行</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -206,8 +206,8 @@
   <main class="shell">
     <header class="hero">
       <div>
-        <div class="eyebrow"><span class="dot"></span> Proxy Traffic · All Protocols</div>
-        <h1>代理流量排行</h1>
+        <div class="eyebrow"><span class="dot"></span> Proxy Hub · Traffic</div>
+        <h1>流量排行</h1>
         <p class="subtitle">按来源 IP 汇总节点出口流量，支持多节点合并查看；按地区和活跃时间推断疑似设备，动态 IP 会保留最新地址。</p>
       </div>
       <div class="hero-actions">
@@ -436,7 +436,7 @@
       Object.entries(params || {}).forEach(([key, value]) => {
         if (value !== undefined && value !== null && String(value).length) query.set(key, String(value));
       });
-      const response = await fetch("/api/proxy-traffic/" + path + "?" + query.toString(), {
+      const response = await fetch("/api/proxy-hub/" + path + "?" + query.toString(), {
         headers: { Accept: "application/json" }, cache: "no-store",
       });
       const text = await response.text();

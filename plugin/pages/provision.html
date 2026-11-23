@@ -94,7 +94,7 @@
 </head>
 <body>
   <main class="shell">
-    <div class="eyebrow">PROXY TRAFFIC · NODE PROVISION</div>
+    <div class="eyebrow">PROXY HUB · NODE PROVISION</div>
     <h1>创建代理节点</h1>
     <p class="subtitle">通过 Komari 远程执行，在节点上创建或更新 VLESS + Reality 入站。支持 sing-box 与 Xray-core，并自动把节点写入订阅节点库。</p>
 
@@ -179,7 +179,7 @@
             </div>
             <div class="field singbox-only">
               <label for="clashSecretPath">Clash API secret 文件路径</label>
-              <input id="clashSecretPath" value="/etc/proxy-traffic/clash-api-secret">
+              <input id="clashSecretPath" value="/etc/proxy-hub/clash-api-secret">
             </div>
             <div class="field full">
               <label class="check"><input id="replaceExisting" type="checkbox"> tag 已存在时更新该入站（sing-box 会更换凭据；Xray 默认保留现有用户凭据）</label>
@@ -263,7 +263,7 @@
         el.configPath.value = "/etc/sing-box/config.json";
         el.listen.value = "::";
         el.clashController.value = "127.0.0.1:9090";
-        el.clashSecretPath.value = "/etc/proxy-traffic/clash-api-secret";
+        el.clashSecretPath.value = "/etc/proxy-hub/clash-api-secret";
       }
       syncKernelFields();
       invalidatePreview();
@@ -272,7 +272,7 @@
     async function loadClients() {
       setStatus("正在读取 Komari 节点列表…");
       try {
-        const response = await fetch("/api/proxy-traffic/provision/clients", { cache: "no-store" });
+        const response = await fetch("/api/proxy-hub/provision/clients", { cache: "no-store" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "读取节点失败");
         clients = Array.isArray(payload.clients) ? payload.clients : [];
@@ -523,7 +523,7 @@ secret_path.parent.mkdir(parents=True, exist_ok=True)
 secret_path.write_text(clash_secret + "\n", encoding="utf-8")
 os.chmod(secret_path, 0o640)
 try:
-    shutil.chown(secret_path, user="root", group="proxy-traffic")
+    shutil.chown(secret_path, user="root", group="proxy-hub")
 except Exception:
     pass
 ` + rollbackBlock() + String.raw`
@@ -811,7 +811,7 @@ print(json.dumps({
     function buildCommand() {
       const params = getParams();
       const script = params.kernel === "xray" ? pythonXrayScript(params) : pythonSingBoxScript(params);
-      lastCommand = "# komari-proxy-traffic-provision\nset -e\npython3 - <<'PY'\n" + script + "\nPY";
+      lastCommand = "# komari-proxy-hub-provision\nset -e\npython3 - <<'PY'\n" + script + "\nPY";
       el.previewBox.hidden = false;
       el.previewBox.textContent = lastCommand;
       el.apply.disabled = !el.confirm.checked;
@@ -822,7 +822,7 @@ print(json.dumps({
     async function pollTask(taskId) {
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        const response = await fetch("/api/proxy-traffic/provision/task?task_id=" + encodeURIComponent(taskId), { cache: "no-store" });
+        const response = await fetch("/api/proxy-hub/provision/task?task_id=" + encodeURIComponent(taskId), { cache: "no-store" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "读取任务失败");
         const results = Array.isArray(payload.results) ? payload.results : [];
@@ -840,7 +840,7 @@ print(json.dumps({
     }
 
     async function saveProvisionedNode(data, client) {
-      const response = await fetch("/api/proxy-traffic/sub/nodes", {
+      const response = await fetch("/api/proxy-hub/sub/nodes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -941,7 +941,7 @@ print(json.dumps({
       el.apply.disabled = true;
       setStatus("正在提交远程任务…");
       try {
-        const response = await fetch("/api/proxy-traffic/provision/apply", {
+      const response = await fetch("/api/proxy-hub/provision/apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ client: client.uuid, command: lastCommand }),

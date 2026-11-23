@@ -36,19 +36,19 @@ try:
 except ImportError:
     maxminddb = None
 
-BIND_ADDRESS = os.environ.get('PROXY_TRAFFIC_BIND', '172.17.0.1')
-PORT = int(os.environ.get('PROXY_TRAFFIC_PORT', '9460'))
-DB_PATH = Path(os.environ.get('PROXY_TRAFFIC_DB', '/var/lib/proxy-traffic/aggregate.db'))
-TOKEN_PATH = Path(os.environ.get('PROXY_TRAFFIC_TOKEN_FILE', '/etc/proxy-traffic/ingest-token'))
+BIND_ADDRESS = os.environ.get('PROXY_HUB_BIND', '172.17.0.1')
+PORT = int(os.environ.get('PROXY_HUB_PORT', '9460'))
+DB_PATH = Path(os.environ.get('PROXY_HUB_DB', '/var/lib/proxy-hub/aggregate.db'))
+TOKEN_PATH = Path(os.environ.get('PROXY_HUB_TOKEN_FILE', '/etc/proxy-hub/ingest-token'))
 GEOIP_CITY_PATH = Path(os.environ.get(
-    'PROXY_TRAFFIC_GEOIP_CITY', '/opt/proxy-traffic/GeoLite2-City.mmdb'
+    'PROXY_HUB_GEOIP_CITY', '/opt/proxy-hub/GeoLite2-City.mmdb'
 ))
 GEOIP_ASN_PATH = Path(os.environ.get(
-    'PROXY_TRAFFIC_GEOIP_ASN', '/opt/proxy-traffic/GeoLite2-ASN.mmdb'
+    'PROXY_HUB_GEOIP_ASN', '/opt/proxy-hub/GeoLite2-ASN.mmdb'
 ))
 GEOIP_CITY_FALLBACK_PATH = Path(os.environ.get(
-    'PROXY_TRAFFIC_GEOIP_CITY_FALLBACK',
-    '/opt/proxy-traffic/dbip-city-lite.mmdb',
+    'PROXY_HUB_GEOIP_CITY_FALLBACK',
+    '/opt/proxy-hub/dbip-city-lite.mmdb',
 ))
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_ROWS = 5000
@@ -59,19 +59,19 @@ ONLINE_WINDOW_SECONDS = 3 * 60
 IPINFO_TIMEOUT_SECONDS = 3
 AUTO_GAP_MINUTES = 10
 AUTO_HIGH_CONFIDENCE_MINUTES = 3
-SUB_BASE_URL = os.environ.get('PROXY_TRAFFIC_SUB_BASE_URL', '').strip().rstrip('/')
-RULE_DIR = Path(os.environ.get('PROXY_TRAFFIC_RULES_DIR', '/var/www/premium'))
+SUB_BASE_URL = os.environ.get('PROXY_HUB_SUB_BASE_URL', '').strip().rstrip('/')
+RULE_DIR = Path(os.environ.get('PROXY_HUB_RULES_DIR', '/var/www/premium'))
 RULE_PUBLIC_BASE = os.environ.get(
-    'PROXY_TRAFFIC_RULE_PUBLIC_BASE', 'https://premium.syngnat.top'
+    'PROXY_HUB_RULE_PUBLIC_BASE', 'https://premium.syngnat.top'
 ).strip().rstrip('/')
 RULE_TARGET_IP = os.environ.get(
-    'PROXY_TRAFFIC_RULE_TARGET_IP', ''
+    'PROXY_HUB_RULE_TARGET_IP', ''
 ).strip()
 RULE_TARGET_NAME = os.environ.get(
-    'PROXY_TRAFFIC_RULE_TARGET_NAME', ''
+    'PROXY_HUB_RULE_TARGET_NAME', ''
 ).strip()
 RULE_DEFAULT_GLOB = os.environ.get(
-    'PROXY_TRAFFIC_RULE_GLOB', '*/mihomo.yaml'
+    'PROXY_HUB_RULE_GLOB', '*/mihomo.yaml'
 ).strip() or '*/mihomo.yaml'
 NODE_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
 SITE_RE = re.compile(r'^[A-Za-z0-9._:-]{1,253}$')
@@ -101,12 +101,12 @@ NOISE_SITE_EXACT = {
     'safebrowsing.googleapis.com',
 }
 NOISE_SITE_SUFFIXES = ('.challenges.cloudflare.com', '.gvt2.com')
-INGEST_PATHS = {'/ingest', '/api/proxy-traffic/ingest'}
-SUMMARY_PATHS = {'/summary', '/api/proxy-traffic/summary'}
-TIMELINE_PATHS = {'/timeline', '/api/proxy-traffic/timeline'}
-HEALTH_PATHS = {'/healthz', '/api/proxy-traffic/health'}
-DEVICE_MAP_PATHS = {'/device-map', '/api/proxy-traffic/device-map'}
-IP_SITES_PATHS = {'/ip-sites', '/api/proxy-traffic/ip-sites'}
+INGEST_PATHS = {'/ingest', '/api/proxy-hub/ingest'}
+SUMMARY_PATHS = {'/summary', '/api/proxy-hub/summary'}
+TIMELINE_PATHS = {'/timeline', '/api/proxy-hub/timeline'}
+HEALTH_PATHS = {'/healthz', '/api/proxy-hub/health'}
+DEVICE_MAP_PATHS = {'/device-map', '/api/proxy-hub/device-map'}
+IP_SITES_PATHS = {'/ip-sites', '/api/proxy-hub/ip-sites'}
 
 REGION_NAME_ZH = {
     'Beijing': '北京', 'Tianjin': '天津', 'Hebei': '河北', 'Shanxi': '山西',
@@ -137,7 +137,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S%z',
 )
-log = logging.getLogger('proxy-traffic-aggregate')
+log = logging.getLogger('proxy-hub-aggregate')
 
 
 def now_ms() -> int:
@@ -145,7 +145,7 @@ def now_ms() -> int:
 
 
 def load_token() -> str:
-    token = os.environ.get('PROXY_TRAFFIC_INGEST_TOKEN', '').strip()
+    token = os.environ.get('PROXY_HUB_INGEST_TOKEN', '').strip()
     if not token:
         token = TOKEN_PATH.read_text(encoding='utf-8').strip()
     if len(token) < 24:
@@ -456,7 +456,7 @@ def ipinfo_lookup(ip: str) -> dict | None:
         url,
         headers={
             'Accept': 'application/json',
-            'User-Agent': 'komari-proxy-traffic/1',
+            'User-Agent': 'komari-proxy-hub/1',
         },
     )
     try:
@@ -3073,7 +3073,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.8'
+    server_version = 'ProxyHubAggregate/2.3.0'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:
@@ -3089,8 +3089,8 @@ class Handler(BaseHTTPRequestHandler):
             message,
         )
         message = re.sub(
-            r'/proxy-traffic-sub/(?:s/)?[A-Za-z0-9_-]{4,128}',
-            '/proxy-traffic-sub/<redacted>',
+            r'/proxy-hub-sub/(?:s/)?[A-Za-z0-9_-]{4,128}',
+            '/proxy-hub-sub/<redacted>',
             message,
         )
         log.info('%s - %s', self.client_address[0], message)
@@ -3168,27 +3168,27 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
         try:
-            if parsed.path == '/api/proxy-traffic/sub/state':
+            if parsed.path == '/api/proxy-hub/sub/state':
                 if not self.require_local():
                     return
                 self.send_json(200, subscription_state())
                 return
             if parsed.path in (
-                '/api/proxy-traffic/rules',
-                '/api/proxy-traffic/rules/state',
+                '/api/proxy-hub/rules',
+                '/api/proxy-hub/rules/state',
             ):
                 if not self.require_local():
                     return
                 self.send_json(200, discover_rule_files())
                 return
-            if parsed.path == '/api/proxy-traffic/rules/file':
+            if parsed.path == '/api/proxy-hub/rules/file':
                 if not self.require_local():
                     return
                 file_id = (query.get('file_id') or [''])[0].strip()
                 self.send_json(200, read_rule_file(file_id))
                 return
             segments = [unquote(segment) for segment in parsed.path.split('/') if segment]
-            if segments and segments[0] == 'proxy-traffic-sub':
+            if segments and segments[0] == 'proxy-hub-sub':
                 segments = ['sub'] + segments[1:]
             if (
                 (len(segments) == 2 and segments[0] == 's') or
@@ -3325,18 +3325,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {'ok': True, 'accepted': accepted})
             log.info('ingested %d rows', accepted)
             return
-        if parsed.path.startswith('/api/proxy-traffic/rules/'):
+        if parsed.path.startswith('/api/proxy-hub/rules/'):
             if not self.require_local():
                 return
             try:
                 payload = self.read_json_body(4 * 1024 * 1024)
-                if parsed.path == '/api/proxy-traffic/rules/config':
+                if parsed.path == '/api/proxy-hub/rules/config':
                     self.send_json(200, {
                         'ok': True,
                         'config': save_rule_config(payload),
                     })
                     return
-                if parsed.path == '/api/proxy-traffic/rules/parse':
+                if parsed.path == '/api/proxy-hub/rules/parse':
                     self.send_json(
                         200,
                         validate_rule_content(
@@ -3344,7 +3344,7 @@ class Handler(BaseHTTPRequestHandler):
                         ),
                     )
                     return
-                if parsed.path == '/api/proxy-traffic/rules/prepare':
+                if parsed.path == '/api/proxy-hub/rules/prepare':
                     file_id = _clean_text(
                         payload.get('file_id') if isinstance(payload, dict) else '',
                         'file_id',
@@ -3363,16 +3363,16 @@ class Handler(BaseHTTPRequestHandler):
                 log.exception('rule operation failed')
                 self.send_json(500, {'error': 'internal error'})
             return
-        if parsed.path.startswith('/api/proxy-traffic/sub/'):
+        if parsed.path.startswith('/api/proxy-hub/sub/'):
             if not self.require_local():
                 return
             try:
                 payload = self.read_json_body()
-                if parsed.path == '/api/proxy-traffic/sub/nodes':
+                if parsed.path == '/api/proxy-hub/sub/nodes':
                     node = save_subscription_node(payload)
                     self.send_json(200, {'ok': True, 'node': node})
                     return
-                if parsed.path == '/api/proxy-traffic/sub/nodes/delete':
+                if parsed.path == '/api/proxy-hub/sub/nodes/delete':
                     node_id = _clean_text(
                         payload.get('id') if isinstance(payload, dict) else '',
                         'id',
@@ -3382,23 +3382,23 @@ class Handler(BaseHTTPRequestHandler):
                     removed = delete_subscription_node(node_id)
                     self.send_json(200, {'ok': True, 'removed': removed})
                     return
-                if parsed.path == '/api/proxy-traffic/sub/nodes/import':
+                if parsed.path == '/api/proxy-hub/sub/nodes/import':
                     result = import_subscription_links(
                         payload.get('links') if isinstance(payload, dict) else None
                     )
                     self.send_json(200, result)
                     return
-                if parsed.path == '/api/proxy-traffic/sub/nodes/import-rules':
+                if parsed.path == '/api/proxy-hub/sub/nodes/import-rules':
                     result = import_rule_nodes(
                         payload.get('file_ids') if isinstance(payload, dict) else None
                     )
                     self.send_json(200, result)
                     return
-                if parsed.path == '/api/proxy-traffic/sub/subscriptions':
+                if parsed.path == '/api/proxy-hub/sub/subscriptions':
                     subscription = save_subscription(payload)
                     self.send_json(200, {'ok': True, 'subscription': subscription})
                     return
-                if parsed.path == '/api/proxy-traffic/sub/subscriptions/delete':
+                if parsed.path == '/api/proxy-hub/sub/subscriptions/delete':
                     subscription_id = _clean_text(
                         payload.get('id') if isinstance(payload, dict) else '',
                         'id',
@@ -3408,7 +3408,7 @@ class Handler(BaseHTTPRequestHandler):
                     removed = delete_subscription(subscription_id)
                     self.send_json(200, {'ok': True, 'removed': removed})
                     return
-                if parsed.path == '/api/proxy-traffic/sub/subscriptions/rotate':
+                if parsed.path == '/api/proxy-hub/sub/subscriptions/rotate':
                     subscription_id = _clean_text(
                         payload.get('id') if isinstance(payload, dict) else '',
                         'id',

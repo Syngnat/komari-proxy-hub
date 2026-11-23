@@ -1,16 +1,16 @@
 {
   "name": {
-    "zh_CN": "代理流量排行",
-    "en": "Proxy Traffic Ranking"
+    "zh_CN": "代理中枢",
+    "en": "Proxy Hub"
   },
-  "short": "proxy-traffic",
+  "short": "proxy-hub",
   "description": {
-    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；支持 sing-box / Xray 节点创建、订阅节点库、长短链订阅，以及规则、节点和策略组可视化编辑。",
-    "en": "Aggregates proxy traffic by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual editor for rules, proxies, and proxy groups."
+    "zh_CN": "节点、订阅、分流规则与流量统计的一体化管理中枢。支持多节点聚合、Clash API / Xray access log 统计、节点创建、长短链订阅和策略组可视化编辑。",
+    "en": "A unified hub for proxy nodes, subscriptions, routing rules, and traffic analytics, with multi-node aggregation, node provisioning, share links, and a visual policy editor."
   },
   "author": "Syngnat",
-  "version": "2.2.12",
-  "url": "https://github.com/Syngnat/komari-proxy-traffic",
+  "version": "2.3.0",
+  "url": "https://github.com/Syngnat/komari-proxy-hub",
   "komari": ">=1.6.0",
   "entry": "script.js",
   "permissions": {
@@ -23,8 +23,8 @@
     {
       "file": "pages/traffic.html",
       "title": {
-        "zh_CN": "代理流量排行",
-        "en": "Proxy Traffic Ranking"
+        "zh_CN": "流量排行",
+        "en": "Traffic Ranking"
       },
       "type": "iframe",
       "visibility": "admin"

@@ -83,7 +83,7 @@ async function proxyRequest(req, res, upstreamPath, keys) {
     const message = error && error.name === "AbortError"
       ? "聚合服务查询超时"
       : "聚合服务不可用";
-    console.error("proxy-traffic proxy error:", error && error.message ? error.message : error);
+    console.error("proxy-hub proxy error:", error && error.message ? error.message : error);
     reject(res, 503, message);
   }
 }
@@ -122,7 +122,7 @@ async function proxyJsonPost(req, res, upstreamPath) {
     const message = error && error.name === "AbortError"
       ? "聚合服务请求超时"
       : "聚合服务不可用";
-    console.error("proxy-traffic subscription error:", error && error.message ? error.message : error);
+    console.error("proxy-hub subscription error:", error && error.message ? error.message : error);
     reject(res, 503, message);
   }
 }
@@ -136,7 +136,7 @@ async function proxySubscription(req, res) {
     replyJson(res, 404, JSON.stringify({ error: "订阅不存在" }));
     return;
   }
-  const prefix = "/proxy-traffic-sub";
+  const prefix = "/proxy-hub-sub";
   if (!parsed.pathname.startsWith(prefix)) {
     replyJson(res, 404, JSON.stringify({ error: "订阅不存在" }));
     return;
@@ -186,14 +186,14 @@ async function proxySubscription(req, res) {
     }
     res.end(text);
   } catch (error) {
-    console.error("proxy-traffic subscription forward error:", error && error.message ? error.message : error);
+    console.error("proxy-hub subscription forward error:", error && error.message ? error.message : error);
     replyJson(res, 503, JSON.stringify({ error: "订阅服务不可用" }));
   }
 }
 
 function buildRuleSaveCommand(path, contentB64) {
   const pyPath = JSON.stringify(path);
-  return `# komari-proxy-traffic-rule-save
+  return `# komari-proxy-hub-rule-save
 set -e
 python3 - <<'PY'
 import base64
@@ -280,7 +280,7 @@ async function saveRule(req, res) {
     return;
   }
   try {
-    const stateResponse = await backendFetch("/api/proxy-traffic/rules", {
+    const stateResponse = await backendFetch("/api/proxy-hub/rules", {
       headers: { Accept: "application/json" },
     });
     const stateText = await stateResponse.text();
@@ -318,7 +318,7 @@ async function saveRule(req, res) {
         return;
       }
     }
-    const preparedResponse = await backendFetch("/api/proxy-traffic/rules/prepare", {
+    const preparedResponse = await backendFetch("/api/proxy-hub/rules/prepare", {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -361,72 +361,72 @@ async function saveRule(req, res) {
 }
 
 function load() {
-  server.route("GET", "/api/proxy-traffic/summary", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/summary", ["hours"]);
+  server.route("GET", "/api/proxy-hub/summary", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/summary", ["hours"]);
   });
-  server.route("GET", "/api/proxy-traffic/timeline", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/timeline", ["hours", "node_id", "ip", "ips"]);
+  server.route("GET", "/api/proxy-hub/timeline", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/timeline", ["hours", "node_id", "ip", "ips"]);
   });
-  server.route("GET", "/api/proxy-traffic/device-map", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/device-map", [
+  server.route("GET", "/api/proxy-hub/device-map", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/device-map", [
       "node_id", "label", "ips", "device_id", "action",
     ]);
   });
-  server.route("GET", "/api/proxy-traffic/ip-sites", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/ip-sites", [
+  server.route("GET", "/api/proxy-hub/ip-sites", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/ip-sites", [
       "hours", "node_id", "ip",
     ]);
   });
-  server.route("GET", "/api/proxy-traffic/health", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/health", []);
+  server.route("GET", "/api/proxy-hub/health", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/health", []);
   });
-  server.route("GET", "/api/proxy-traffic/sub/state", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/sub/state", []);
+  server.route("GET", "/api/proxy-hub/sub/state", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/sub/state", []);
   });
-  server.route("GET", "/api/proxy-traffic/rules", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/rules", []);
+  server.route("GET", "/api/proxy-hub/rules", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/rules", []);
   });
-  server.route("GET", "/api/proxy-traffic/rules/file", (req, res) => {
-    return proxyRequest(req, res, "/api/proxy-traffic/rules/file", ["file_id"]);
+  server.route("GET", "/api/proxy-hub/rules/file", (req, res) => {
+    return proxyRequest(req, res, "/api/proxy-hub/rules/file", ["file_id"]);
   });
-  server.route("POST", "/api/proxy-traffic/rules/parse", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/rules/parse");
+  server.route("POST", "/api/proxy-hub/rules/parse", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/rules/parse");
   });
-  server.route("POST", "/api/proxy-traffic/rules/config", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/rules/config");
+  server.route("POST", "/api/proxy-hub/rules/config", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/rules/config");
   });
-  server.route("POST", "/api/proxy-traffic/rules/prepare", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/rules/prepare");
+  server.route("POST", "/api/proxy-hub/rules/prepare", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/rules/prepare");
   });
-  server.route("POST", "/api/proxy-traffic/rules/save", (req, res) => {
+  server.route("POST", "/api/proxy-hub/rules/save", (req, res) => {
     return saveRule(req, res);
   });
-  server.route("POST", "/api/proxy-traffic/sub/nodes", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes");
+  server.route("POST", "/api/proxy-hub/sub/nodes", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/nodes");
   });
-  server.route("POST", "/api/proxy-traffic/sub/nodes/delete", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes/delete");
+  server.route("POST", "/api/proxy-hub/sub/nodes/delete", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/nodes/delete");
   });
-  server.route("POST", "/api/proxy-traffic/sub/nodes/import", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes/import");
+  server.route("POST", "/api/proxy-hub/sub/nodes/import", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/nodes/import");
   });
-  server.route("POST", "/api/proxy-traffic/sub/nodes/import-rules", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/nodes/import-rules");
+  server.route("POST", "/api/proxy-hub/sub/nodes/import-rules", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/nodes/import-rules");
   });
-  server.route("POST", "/api/proxy-traffic/sub/subscriptions", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/subscriptions");
+  server.route("POST", "/api/proxy-hub/sub/subscriptions", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/subscriptions");
   });
-  server.route("POST", "/api/proxy-traffic/sub/subscriptions/delete", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/subscriptions/delete");
+  server.route("POST", "/api/proxy-hub/sub/subscriptions/delete", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/subscriptions/delete");
   });
-  server.route("POST", "/api/proxy-traffic/sub/subscriptions/rotate", (req, res) => {
-    return proxyJsonPost(req, res, "/api/proxy-traffic/sub/subscriptions/rotate");
+  server.route("POST", "/api/proxy-hub/sub/subscriptions/rotate", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-hub/sub/subscriptions/rotate");
   });
-  server.route("GET", "/proxy-traffic-sub/*rest", (req, res) => {
+  server.route("GET", "/proxy-hub-sub/*rest", (req, res) => {
     return proxySubscription(req, res);
   });
 
-  server.route("GET", "/api/proxy-traffic/provision/clients", async (req, res) => {
+  server.route("GET", "/api/proxy-hub/provision/clients", async (req, res) => {
     if (!isAdmin(req)) {
       reject(res, 403, "管理员权限不足");
       return;
@@ -448,7 +448,7 @@ function load() {
     }
   });
 
-  server.route("POST", "/api/proxy-traffic/provision/apply", async (req, res) => {
+  server.route("POST", "/api/proxy-hub/provision/apply", async (req, res) => {
     if (!isAdmin(req)) {
       reject(res, 403, "管理员权限不足");
       return;
@@ -460,7 +460,7 @@ function load() {
       reject(res, 400, "无效的节点 UUID");
       return;
     }
-    if (!command || command.length > 200000 || !command.startsWith("# komari-proxy-traffic-provision")) {
+    if (!command || command.length > 200000 || !command.startsWith("# komari-proxy-hub-provision")) {
       reject(res, 400, "无效的部署脚本");
       return;
     }
@@ -475,7 +475,7 @@ function load() {
     }
   });
 
-  server.route("GET", "/api/proxy-traffic/provision/task", async (req, res) => {
+  server.route("GET", "/api/proxy-hub/provision/task", async (req, res) => {
     if (!isAdmin(req)) {
       reject(res, 403, "管理员权限不足");
       return;
@@ -492,9 +492,9 @@ function load() {
       reject(res, 502, rpcMessage(error));
     }
   });
-  console.log("proxy-traffic plugin loaded");
+  console.log("proxy-hub plugin loaded");
 }
 
 function unload() {
-  console.log("proxy-traffic plugin unloaded");
+  console.log("proxy-hub plugin unloaded");
 }

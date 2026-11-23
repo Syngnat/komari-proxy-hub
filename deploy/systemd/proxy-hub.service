@@ -1,0 +1,34 @@
+[Unit]
+Description=Komari proxy hub aggregate and query API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxy-hub
+Group=proxy-hub
+Environment=PYTHONUNBUFFERED=1
+Environment=PROXY_HUB_DB=/var/lib/proxy-hub/aggregate.db
+Environment=PROXY_HUB_TOKEN_FILE=/etc/proxy-hub/ingest-token
+Environment=PROXY_HUB_BIND=172.17.0.1
+Environment=PROXY_HUB_PORT=9460
+Environment=PROXY_HUB_SUB_BASE_URL=
+Environment=PROXY_HUB_RULES_DIR=/var/www/premium
+Environment=PROXY_HUB_RULE_PUBLIC_BASE=https://premium.syngnat.top
+Environment=PROXY_HUB_RULE_GLOB=*/mihomo.yaml
+Environment=PROXY_HUB_RULE_TARGET_IP=
+Environment=PROXY_HUB_RULE_TARGET_NAME=
+ExecStart=/opt/proxy-hub/venv/bin/python /opt/proxy-hub/server.py
+Restart=always
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/proxy-hub /etc/proxy-hub
+ReadWritePaths=/var/lib/proxy-hub
+UMask=0077
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

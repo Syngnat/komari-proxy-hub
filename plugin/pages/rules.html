@@ -278,7 +278,7 @@
 </head>
 <body>
   <main class="shell">
-    <div class="eyebrow">PROXY TRAFFIC · RULE STUDIO</div>
+    <div class="eyebrow">PROXY HUB · RULE STUDIO</div>
     <h1>分流规则</h1>
     <p class="subtitle">自动识别订阅规则文件，可视化编辑规则、节点和策略组，也可以直接编辑 YAML。保存前会校验 YAML，并自动备份原文件。</p>
 
@@ -748,13 +748,13 @@
       el.structuredHint.hidden = structuredEditingSupported;
       el.structuredHint.textContent = structuredEditingSupported
         ? ""
-        : "当前服务端未返回节点和分组数据。请同步更新 proxy-traffic server 到 2.2.8 后刷新页面，再使用节点/分组编辑。";
+        : "当前服务端未返回节点和分组数据。请同步更新 proxy-hub server 到 2.3.0 后刷新页面，再使用节点/分组编辑。";
       el.tabNodes.title = structuredEditingSupported
         ? ""
-        : "需要同步更新 proxy-traffic server";
+        : "需要同步更新 proxy-hub server";
       el.tabGroups.title = structuredEditingSupported
         ? ""
-        : "需要同步更新 proxy-traffic server";
+        : "需要同步更新 proxy-hub server";
     }
 
     function escapeHtml(value) {
@@ -1389,7 +1389,7 @@
 
     function saveNodeForm() {
       if (!structuredEditingSupported) {
-        setStatus("请先同步更新 proxy-traffic server。", "error", el.editorStatus);
+        setStatus("请先同步更新 proxy-hub server。", "error", el.editorStatus);
         return;
       }
       const wasEditing = editingNodeIndex >= 0;
@@ -1682,7 +1682,7 @@
 
     function saveQuickGroupForm() {
       if (!structuredEditingSupported) {
-        setStatus("请先同步更新 proxy-traffic server。", "error", el.quickGroupStatus);
+        setStatus("请先同步更新 proxy-hub server。", "error", el.quickGroupStatus);
         return;
       }
       const name = el.quickGroupName.value.trim();
@@ -1743,7 +1743,7 @@
 
     function saveGroupForm() {
       if (!structuredEditingSupported) {
-        setStatus("请先同步更新 proxy-traffic server。", "error", el.editorStatus);
+        setStatus("请先同步更新 proxy-hub server。", "error", el.editorStatus);
         return;
       }
       const wasEditing = editingGroupIndex >= 0;
@@ -2093,7 +2093,7 @@
 
     async function switchTab(tab) {
       if ((tab === "nodes" || tab === "groups") && !structuredEditingSupported) {
-        setStatus("节点和分组编辑需要同步更新 proxy-traffic server 到 2.2.8。", "error", el.editorStatus);
+        setStatus("节点和分组编辑需要同步更新 proxy-hub server 到 2.3.0。", "error", el.editorStatus);
         return;
       }
       if (tab !== "raw" && rawDirty) {
@@ -2120,7 +2120,7 @@
 
     async function parseRaw() {
       setStatus("正在校验 YAML…", "", el.editorStatus);
-      const payload = await api("/api/proxy-traffic/rules/parse", {
+      const payload = await api("/api/proxy-hub/rules/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: el.yamlEditor.value }),
@@ -2218,7 +2218,7 @@
       setStatus("正在读取规则文件…");
       try {
         const payload = await api(
-          "/api/proxy-traffic/rules/file?file_id=" + encodeURIComponent(fileId)
+          "/api/proxy-hub/rules/file?file_id=" + encodeURIComponent(fileId)
         );
         fileCache.set(fileId, payload);
         return await applyFilePayload(payload);
@@ -2242,7 +2242,7 @@
       }
       try {
         const payload = await api(
-          "/api/proxy-traffic/rules/file?file_id=" + encodeURIComponent(fileId)
+          "/api/proxy-hub/rules/file?file_id=" + encodeURIComponent(fileId)
         );
         fileCache.set(fileId, payload);
       } catch (_) {
@@ -2253,7 +2253,7 @@
     async function loadState() {
       setStatus("正在识别规则文件…");
       try {
-        const payload = await api("/api/proxy-traffic/rules");
+        const payload = await api("/api/proxy-hub/rules");
         state = {
           files: Array.isArray(payload.files) ? payload.files : [],
           root: payload.root || "",
@@ -2293,7 +2293,7 @@
       el.saveRuleConfig.disabled = true;
       setStatus("正在保存识别设置…");
       try {
-        const payload = await api("/api/proxy-traffic/rules/config", {
+        const payload = await api("/api/proxy-hub/rules/config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2321,7 +2321,7 @@
 
     async function loadClients() {
       try {
-        const payload = await api("/api/proxy-traffic/provision/clients");
+        const payload = await api("/api/proxy-hub/provision/clients");
         clients = Array.isArray(payload.clients) ? payload.clients : [];
         renderClients();
       } catch (error) {
@@ -2338,7 +2338,7 @@
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const response = await fetch(
-          "/api/proxy-traffic/provision/task?task_id=" + encodeURIComponent(taskId),
+          "/api/proxy-hub/provision/task?task_id=" + encodeURIComponent(taskId),
           { cache: "no-store" },
         );
         const payload = await response.json();
@@ -2378,7 +2378,7 @@
       el.saveRules.disabled = true;
       setStatus("正在提交保存任务…", "", el.editorStatus);
       try {
-        const payload = await api("/api/proxy-traffic/rules/save", {
+        const payload = await api("/api/proxy-hub/rules/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

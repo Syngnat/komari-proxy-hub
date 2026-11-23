@@ -106,7 +106,7 @@
 </head>
 <body>
   <main class="shell">
-    <div class="eyebrow">PROXY TRAFFIC · SUBSCRIPTIONS</div>
+    <div class="eyebrow">PROXY HUB · SUBSCRIPTIONS</div>
     <h1>订阅管理</h1>
     <p class="subtitle">一个订阅可以选多个节点。自用订阅可选全部节点，付费订阅只勾选指定节点；同一个节点可以同时出现在多个订阅里。</p>
 
@@ -164,7 +164,7 @@
         </div>
         <div class="field full">
           <label for="baseUrl">订阅基址</label>
-          <input id="baseUrl" placeholder="https://komari.example.com/proxy-traffic-sub">
+          <input id="baseUrl" placeholder="https://komari.example.com/proxy-hub-sub">
           <div class="base-presets">
             <button id="komariBase" class="small" type="button">使用 Komari 域名</button>
             <span class="hint">独立域名填 <code>https://sub.example.com/sub</code>，Nginx 将该前缀反代到 <code>127.0.0.1:9460</code>。</span>
@@ -214,7 +214,7 @@
     }
 
     function defaultBase() {
-      return window.location.origin + "/proxy-traffic-sub";
+      return window.location.origin + "/proxy-hub-sub";
     }
 
     function formatLabel(value) {
@@ -302,7 +302,7 @@
           event.stopPropagation();
           if (!confirm("从节点库删除“" + node.name + "”？订阅里也会移除该节点。")) return;
           try {
-            await api("/api/proxy-traffic/sub/nodes/delete", {
+            await api("/api/proxy-hub/sub/nodes/delete", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: node.id }),
@@ -408,7 +408,7 @@
         rotate.addEventListener("click", async () => {
           if (!confirm("轮换“" + subscription.name + "”的令牌？旧长短链会立即失效。")) return;
           try {
-            await api("/api/proxy-traffic/sub/subscriptions/rotate", {
+            await api("/api/proxy-hub/sub/subscriptions/rotate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: subscription.id }),
@@ -426,7 +426,7 @@
         remove.addEventListener("click", async () => {
           if (!confirm("删除订阅“" + subscription.name + "”？节点本身不会删除。")) return;
           try {
-            await api("/api/proxy-traffic/sub/subscriptions/delete", {
+            await api("/api/proxy-hub/sub/subscriptions/delete", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ id: subscription.id }),
@@ -480,7 +480,7 @@
     }
 
     async function loadState() {
-      const payload = await api("/api/proxy-traffic/sub/state");
+      const payload = await api("/api/proxy-hub/sub/state");
       state = {
         nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
         subscriptions: Array.isArray(payload.subscriptions) ? payload.subscriptions : [],
@@ -498,7 +498,7 @@
 
     async function importRules(auto) {
       try {
-        const payload = await api("/api/proxy-traffic/sub/nodes/import-rules", {
+        const payload = await api("/api/proxy-hub/sub/nodes/import-rules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: "{}",
@@ -551,7 +551,7 @@
       el.importButton.disabled = true;
       setStatus("正在导入…");
       try {
-        const payload = await api("/api/proxy-traffic/sub/nodes/import", {
+        const payload = await api("/api/proxy-hub/sub/nodes/import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ links }),
@@ -591,7 +591,7 @@
       el.save.disabled = true;
       setStatus(editingId ? "正在保存修改…" : "正在创建订阅…");
       try {
-        await api("/api/proxy-traffic/sub/subscriptions", {
+        await api("/api/proxy-hub/sub/subscriptions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

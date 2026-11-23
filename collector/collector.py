@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-CONFIG_PATH = Path('/etc/proxy-traffic/config.json')
-DEFAULT_DB = Path('/var/lib/proxy-traffic/traffic.db')
+CONFIG_PATH = Path('/etc/proxy-hub/config.json')
+DEFAULT_DB = Path('/var/lib/proxy-hub/traffic.db')
 POLL_SECONDS = 1.0
 UPLOAD_SECONDS = 30.0
 DEFAULT_PROTOCOLS = ('*',)
@@ -243,7 +243,7 @@ def fetch_connections(api_url: str, secret: str) -> list[dict]:
         headers={
             'Accept': 'application/json',
             'Authorization': 'Bearer ' + secret,
-            'User-Agent': 'komari-proxy-traffic/1',
+            'User-Agent': 'komari-proxy-hub/1',
         },
     )
     with urllib.request.urlopen(request, timeout=8) as response:
@@ -404,7 +404,7 @@ def post_batch(config: dict, rows: list[list[int | str]], site_rows: list[list[i
         headers={
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + config['ingest_token'],
-            'User-Agent': 'komari-proxy-traffic/1',
+            'User-Agent': 'komari-proxy-hub/1',
         },
     )
     with urllib.request.urlopen(request, timeout=20) as response:
