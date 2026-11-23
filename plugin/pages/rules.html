@@ -101,6 +101,11 @@
     .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; color: var(--muted); }
     .tab.active { border-bottom-color: var(--accent); color: var(--accent); }
     .rule-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .rule-filters {
+      display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin-top: 10px;
+      padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft);
+    }
+    .rule-filters .field { min-width: 170px; flex: 1; }
     .rule-form { display: grid; grid-template-columns: 150px minmax(160px, 1fr) minmax(160px, 1fr) 150px auto; gap: 8px; align-items: end; margin-top: 10px; }
     .rule-form .field { gap: 4px; }
     .rule-table-wrap { margin-top: 12px; max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
@@ -223,9 +228,20 @@
               <div class="hint" id="ruleSummary">—</div>
               <button id="refreshFile" class="small" type="button">重新读取文件</button>
             </div>
+            <div class="rule-filters">
+              <div class="field">
+                <label for="filterType">筛选类型</label>
+                <select id="filterType"><option value="">全部</option></select>
+              </div>
+              <div class="field">
+                <label for="filterTarget">筛选目标</label>
+                <select id="filterTarget"><option value="">全部</option></select>
+              </div>
+              <button id="clearFilters" type="button">清除筛选</button>
+            </div>
             <div class="rule-form" id="ruleForm">
               <div class="field">
-                <label for="ruleType">类型</label>
+                <label for="ruleType">新增规则类型</label>
                 <select id="ruleType"></select>
               </div>
               <div class="field">
@@ -233,7 +249,7 @@
                 <input id="ruleValue" placeholder="example.com / acl_openai / CN">
               </div>
               <div class="field">
-                <label for="ruleTarget">目标</label>
+                <label for="ruleTarget">新增目标</label>
                 <select id="ruleTarget"></select>
               </div>
               <div class="field">
@@ -287,7 +303,8 @@
       "currentTitle", "currentMeta", "copyUrl", "clientSelect", "filePath",
       "subscriptionUrl",
       "tabVisual", "tabRaw", "visualPane", "rawPane", "ruleSummary",
-      "refreshFile", "ruleForm", "ruleType", "ruleValue", "ruleTarget",
+      "refreshFile", "filterType", "filterTarget", "clearFilters",
+      "ruleForm", "ruleType", "ruleValue", "ruleTarget",
       "ruleOptions", "applyRule", "cancelRule", "ruleRows", "parseRaw",
       "yamlEditor", "yamlHighlight", "saveRules", "reloadFile",
       "editorStatus", "editorResult",
@@ -311,6 +328,7 @@
     let editingIndex = -1;
     let rawDirty = false;
     let activeTab = "visual";
+    let visibleRuleCount = 0;
 
     function setStatus(message, kind, target) {
       const node = target || el.ruleStatus;
@@ -445,8 +463,11 @@
       ].join(" · ");
       el.filePath.textContent = file.path || "—";
       el.subscriptionUrl.textContent = file.url || "—";
+      const visible = (el.filterType.value || el.filterTarget.value)
+        ? visibleRuleCount
+        : rules.length;
       el.ruleSummary.textContent =
-        (rules.length || 0) + " 条规则 · " +
+        (visible === rules.length ? visible : visible + " / " + rules.length) + " 条规则 · " +
         (groups.length || 0) + " 个策略组 · " +
         (providers.length || 0) + " 个规则提供者";
     }
@@ -550,10 +571,57 @@
       return [parts.type, parts.value, parts.target, ...parts.options].filter(Boolean).join(",");
     }
 
+    function renderFilterSelects() {
+      const typeValues = [];
+      const targetValues = [];
+      rules.forEach((rule) => {
+        const parts = parseRule(rule);
+        if (parts.type && !typeValues.includes(parts.type)) typeValues.push(parts.type);
+        if (parts.target && !targetValues.includes(parts.target)) targetValues.push(parts.target);
+      });
+      ruleTypes.forEach((type) => {
+        if (!typeValues.includes(type)) typeValues.push(type);
+      });
+      groups.concat(specialTargets).forEach((target) => {
+        if (!targetValues.includes(target)) targetValues.push(target);
+      });
+      const currentType = el.filterType.value;
+      const currentTarget = el.filterTarget.value;
+      el.filterType.replaceChildren();
+      const allType = document.createElement("option");
+      allType.value = "";
+      allType.textContent = "全部";
+      el.filterType.appendChild(allType);
+      typeValues.forEach((type) => {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        el.filterType.appendChild(option);
+      });
+      el.filterTarget.replaceChildren();
+      const allTarget = document.createElement("option");
+      allTarget.value = "";
+      allTarget.textContent = "全部";
+      el.filterTarget.appendChild(allTarget);
+      targetValues.forEach((target) => {
+        const option = document.createElement("option");
+        option.value = target;
+        option.textContent = target;
+        el.filterTarget.appendChild(option);
+      });
+      el.filterType.value = typeValues.includes(currentType) ? currentType : "";
+      el.filterTarget.value = targetValues.includes(currentTarget) ? currentTarget : "";
+    }
+
     function renderRules() {
+      renderFilterSelects();
       el.ruleRows.replaceChildren();
+      visibleRuleCount = 0;
       rules.forEach((rule, index) => {
         const parts = parseRule(rule);
+        if (el.filterType.value && parts.type !== el.filterType.value) return;
+        if (el.filterTarget.value && parts.target !== el.filterTarget.value) return;
+        visibleRuleCount += 1;
         const row = document.createElement("tr");
         const number = document.createElement("td");
         number.textContent = String(index + 1);
@@ -948,6 +1016,13 @@
     });
     el.tabVisual.addEventListener("click", () => switchTab("visual"));
     el.tabRaw.addEventListener("click", () => switchTab("raw"));
+    el.filterType.addEventListener("change", renderRules);
+    el.filterTarget.addEventListener("change", renderRules);
+    el.clearFilters.addEventListener("click", () => {
+      el.filterType.value = "";
+      el.filterTarget.value = "";
+      renderRules();
+    });
     el.ruleType.addEventListener("change", () => {
       el.ruleValue.disabled = el.ruleType.value === "MATCH" || el.ruleType.value === "FINAL";
     });

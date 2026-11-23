@@ -3037,7 +3037,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.5'
+    server_version = 'ProxyTrafficAggregate/2.2.6'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:
