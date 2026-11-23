@@ -70,6 +70,9 @@ RULE_TARGET_IP = os.environ.get(
 RULE_TARGET_NAME = os.environ.get(
     'PROXY_TRAFFIC_RULE_TARGET_NAME', ''
 ).strip()
+RULE_DEFAULT_GLOB = os.environ.get(
+    'PROXY_TRAFFIC_RULE_GLOB', '*/mihomo.yaml'
+).strip() or '*/mihomo.yaml'
 NODE_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
 SITE_RE = re.compile(r'^[A-Za-z0-9._:-]{1,253}$')
 SUB_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,128}$')
@@ -269,6 +272,11 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_subscription_node_map_node
                 ON subscription_node_map(node_id);
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
             '''
         )
         ip_geo_columns = {
@@ -2748,7 +2756,105 @@ def _rule_providers(document: dict) -> list[str]:
     return sorted(str(name) for name in raw)
 
 
-def _rule_metadata(path: Path, content: str) -> dict:
+def _setting_get(key: str, default: str = '') -> str:
+    conn = db_connect()
+    try:
+        row = conn.execute(
+            'SELECT value FROM app_settings WHERE key = ?',
+            (key,),
+        ).fetchone()
+        return str(row['value']) if row else default
+    finally:
+        conn.close()
+
+
+def _setting_set(key: str, value: str) -> None:
+    conn = db_connect()
+    try:
+        with conn:
+            conn.execute(
+                '''INSERT INTO app_settings(key, value, updated_at_ms)
+                   VALUES(?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET
+                       value=excluded.value,
+                       updated_at_ms=excluded.updated_at_ms''',
+                (key, value, now_ms()),
+            )
+    finally:
+        conn.close()
+
+
+def rule_config() -> dict:
+    default_dirs = [str(RULE_DIR)] if str(RULE_DIR).strip() else []
+    raw_dirs = _setting_get('rules_dirs', '')
+    directories = default_dirs
+    if raw_dirs:
+        try:
+            parsed = json.loads(raw_dirs)
+            if isinstance(parsed, list):
+                directories = [str(item) for item in parsed if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+    glob = _setting_get('rules_glob', '') or RULE_DEFAULT_GLOB
+    public_base = (
+        _setting_get('rule_public_base', '').strip() or RULE_PUBLIC_BASE
+    ).rstrip('/')
+    target_ip = (
+        _setting_get('rule_target_ip', '').strip() or RULE_TARGET_IP
+    )
+    target_name = (
+        _setting_get('rule_target_name', '').strip() or RULE_TARGET_NAME
+    )
+    return {
+        'directories': directories or default_dirs,
+        'glob': glob,
+        'public_base': public_base,
+        'target': {'ip': target_ip, 'name': target_name},
+    }
+
+
+def save_rule_config(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError('config must be an object')
+    raw_dirs = payload.get('directories')
+    if isinstance(raw_dirs, str):
+        raw_dirs = raw_dirs.splitlines()
+    if not isinstance(raw_dirs, list):
+        raise ValueError('directories must be an array')
+    directories = []
+    for value in raw_dirs[:20]:
+        path_text = _clean_text(value, 'directory', 1024)
+        if not path_text:
+            continue
+        path = Path(path_text)
+        if not path.is_absolute():
+            raise ValueError('规则目录必须是绝对路径')
+        normalized = str(path)
+        if normalized not in directories:
+            directories.append(normalized)
+    if not directories:
+        raise ValueError('至少配置一个规则目录')
+    glob = _clean_text(
+        payload.get('glob') or RULE_DEFAULT_GLOB,
+        'glob',
+        240,
+        True,
+    )
+    if glob.startswith('/') or '..' in Path(glob).parts:
+        raise ValueError('glob 必须是相对匹配规则')
+    public_base = _safe_url(payload.get('public_base'), 'public_base')
+    target = payload.get('target') if isinstance(payload.get('target'), dict) else {}
+    target_ip = _clean_text(target.get('ip'), 'target_ip', 253)
+    target_name = _clean_text(target.get('name'), 'target_name', 120)
+    _setting_set('rules_dirs', json.dumps(directories, ensure_ascii=False))
+    _setting_set('rules_glob', glob)
+    _setting_set('rule_public_base', public_base)
+    _setting_set('rule_target_ip', target_ip)
+    _setting_set('rule_target_name', target_name)
+    return rule_config()
+
+
+def _rule_metadata(path: Path, content: str, public_base: str) -> dict:
     stat = path.stat()
     token = path.parent.name
     metadata = {
@@ -2760,8 +2866,8 @@ def _rule_metadata(path: Path, content: str) -> dict:
             if len(token) > 16 else token
         ),
         'url': (
-            RULE_PUBLIC_BASE + '/' + token + '/mihomo.yaml'
-            if RULE_PUBLIC_BASE and re.fullmatch(r'[A-Fa-f0-9]{64}', token)
+            public_base + '/' + token + '/mihomo.yaml'
+            if public_base and re.fullmatch(r'[A-Fa-f0-9]{64}', token)
             else ''
         ),
         'size': stat.st_size,
@@ -2808,29 +2914,38 @@ def _rule_metadata(path: Path, content: str) -> dict:
 
 
 def discover_rule_files() -> dict:
-    if not RULE_DIR.is_dir():
-        return {
-            'ok': True,
-            'root': str(RULE_DIR),
-            'public_base': RULE_PUBLIC_BASE,
-        'target': {'ip': RULE_TARGET_IP, 'name': RULE_TARGET_NAME},
-            'files': [],
-            'error': '规则目录不存在',
-        }
+    config = rule_config()
+    roots = [Path(value) for value in config['directories']]
+    glob = config['glob']
+    public_base = config['public_base']
     files = []
     errors = []
-    for path in sorted(RULE_DIR.glob('*/mihomo.yaml')):
+    seen = set()
+    for root in roots:
+        if not root.is_dir():
+            errors.append({'path': str(root), 'error': '目录不存在'})
+            continue
         try:
-            if not path.is_file():
-                continue
-            stat = path.stat()
-            if stat.st_size > 4 * 1024 * 1024:
-                errors.append({'path': str(path), 'error': '文件超过 4 MiB'})
-                continue
-            content = path.read_text(encoding='utf-8')
-            files.append(_rule_metadata(path, content))
-        except (OSError, UnicodeDecodeError) as exc:
-            errors.append({'path': str(path), 'error': str(exc)})
+            paths = sorted(root.glob(glob))
+        except (OSError, ValueError) as exc:
+            errors.append({'path': str(root), 'error': str(exc)})
+            continue
+        for path in paths:
+            try:
+                if not path.is_file():
+                    continue
+                key = str(path.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                stat = path.stat()
+                if stat.st_size > 4 * 1024 * 1024:
+                    errors.append({'path': str(path), 'error': '文件超过 4 MiB'})
+                    continue
+                content = path.read_text(encoding='utf-8')
+                files.append(_rule_metadata(path, content, public_base))
+            except (OSError, UnicodeDecodeError) as exc:
+                errors.append({'path': str(path), 'error': str(exc)})
     files.sort(
         key=lambda item: (
             -int(item.get('proxy_count') or 0),
@@ -2840,9 +2955,11 @@ def discover_rule_files() -> dict:
     )
     result = {
         'ok': True,
-        'root': str(RULE_DIR),
-        'public_base': RULE_PUBLIC_BASE,
-        'target': {'ip': RULE_TARGET_IP, 'name': RULE_TARGET_NAME},
+        'root': str(roots[0]) if roots else '',
+        'roots': [str(root) for root in roots],
+        'glob': glob,
+        'public_base': public_base,
+        'target': config['target'],
         'files': files,
     }
     if errors:
@@ -2920,7 +3037,7 @@ def prepare_rule_save(file_id: str, content: object) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/2.2.4'
+    server_version = 'ProxyTrafficAggregate/2.2.5'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:
@@ -3177,6 +3294,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 payload = self.read_json_body(4 * 1024 * 1024)
+                if parsed.path == '/api/proxy-traffic/rules/config':
+                    self.send_json(200, {
+                        'ok': True,
+                        'config': save_rule_config(payload),
+                    })
+                    return
                 if parsed.path == '/api/proxy-traffic/rules/parse':
                     self.send_json(
                         200,

@@ -392,6 +392,9 @@ function load() {
   server.route("POST", "/api/proxy-traffic/rules/parse", (req, res) => {
     return proxyJsonPost(req, res, "/api/proxy-traffic/rules/parse");
   });
+  server.route("POST", "/api/proxy-traffic/rules/config", (req, res) => {
+    return proxyJsonPost(req, res, "/api/proxy-traffic/rules/config");
+  });
   server.route("POST", "/api/proxy-traffic/rules/prepare", (req, res) => {
     return proxyJsonPost(req, res, "/api/proxy-traffic/rules/prepare");
   });

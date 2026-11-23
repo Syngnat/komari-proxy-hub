@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：2.2.4
+> 当前版本：2.2.5
 
 ## 功能
 
@@ -200,6 +200,8 @@ https://sub.example.com/sub/<token>?format=base64
 - 多节点文件：自用订阅，包含全部节点。
 - 单节点文件：共享订阅，只包含 PPFlight。
 
+其他用户不需要使用 `/var/www/premium`：打开“分流规则 → 识别设置”，可以保存一个或多个绝对目录、文件匹配模式、订阅域名基址和执行节点。设置会写入聚合数据库，下次启动仍然生效；环境变量只作为首次默认值。
+
 打开“分流规则”页面后可以：
 
 1. 选择订阅文件，查看规则数量、节点数、策略组和规则提供者。
@@ -216,6 +218,7 @@ https://sub.example.com/sub/<token>?format=base64
 ```bash
 PROXY_TRAFFIC_RULES_DIR=/实际/规则目录
 PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.example.com
+PROXY_TRAFFIC_RULE_GLOB=*/mihomo.yaml
 PROXY_TRAFFIC_RULE_TARGET_IP=规则文件所在节点IP
 PROXY_TRAFFIC_RULE_TARGET_NAME=规则文件所在节点名称
 ```
@@ -450,6 +453,7 @@ docker restart komari
 | `PROXY_TRAFFIC_SUB_BASE_URL` | 空 | 可选默认订阅基址，例如 `https://komari.example.com/proxy-traffic-sub` 或 `https://sub.example.com/sub` |
 | `PROXY_TRAFFIC_RULES_DIR` | `/var/www/premium` | 分流规则 YAML 扫描目录，匹配 `*/mihomo.yaml` |
 | `PROXY_TRAFFIC_RULE_PUBLIC_BASE` | `https://premium.syngnat.top` | 规则文件对应的订阅域名基址 |
+| `PROXY_TRAFFIC_RULE_GLOB` | `*/mihomo.yaml` | 规则目录下的文件匹配模式；其他目录结构可在规则页“识别设置”修改 |
 | `PROXY_TRAFFIC_RULE_TARGET_IP` | 空 | 规则文件所在 Komari 节点 IP；配置后不允许保存到其他 VPS |
 | `PROXY_TRAFFIC_RULE_TARGET_NAME` | 空 | 规则文件所在 Komari 节点名称匹配串 |
 | `IPINFO_TOKEN` | 空 | 可选 IPinfo token，不填也能用免费额度 |

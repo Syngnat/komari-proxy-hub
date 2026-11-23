@@ -50,6 +50,11 @@
     }
     .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .panel-head + .panel-head { margin-top: 18px; }
+    .config-box { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+    .config-box summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--muted); }
+    .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .config-grid .full { grid-column: 1 / -1; }
+    .config-grid textarea { min-height: 58px; resize: vertical; font: 12px/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
     .workspace { display: grid; grid-template-columns: 285px minmax(0, 1fr); gap: 16px; margin-top: 16px; }
     .file-list { display: flex; flex-direction: column; gap: 9px; }
     .file-card {
@@ -153,6 +158,34 @@
         </div>
         <button id="refreshRules" type="button">重新识别</button>
       </div>
+      <details class="config-box">
+        <summary>识别设置（其他用户可在这里改目录和文件匹配）</summary>
+        <div class="config-grid">
+          <div class="field full">
+            <label for="rulesDirs">规则目录（每行一个绝对路径）</label>
+            <textarea id="rulesDirs" placeholder="/var/www/premium&#10;/opt/other-rules"></textarea>
+          </div>
+          <div class="field">
+            <label for="rulesGlob">文件匹配</label>
+            <input id="rulesGlob" placeholder="*/mihomo.yaml">
+          </div>
+          <div class="field">
+            <label for="rulePublicBase">订阅域名基址</label>
+            <input id="rulePublicBase" placeholder="https://premium.example.com">
+          </div>
+          <div class="field">
+            <label for="targetIp">执行节点 IP（可选）</label>
+            <input id="targetIp" placeholder="94.103.173.47">
+          </div>
+          <div class="field">
+            <label for="targetName">执行节点名称（可选）</label>
+            <input id="targetName" placeholder="Bero-DE-6H16">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="saveRuleConfig" class="primary" type="button">保存识别设置</button>
+        </div>
+      </details>
       <div id="ruleStatus" class="status"></div>
       <div class="workspace">
         <aside id="fileList" class="file-list"></aside>
@@ -248,7 +281,9 @@
 
   <script>
     const el = Object.fromEntries([
-      "rootPath", "refreshRules", "ruleStatus", "fileList", "editorArea",
+      "rootPath", "refreshRules", "ruleStatus", "rulesDirs", "rulesGlob",
+      "rulePublicBase", "targetIp", "targetName", "saveRuleConfig",
+      "fileList", "editorArea",
       "currentTitle", "currentMeta", "copyUrl", "clientSelect", "filePath",
       "subscriptionUrl",
       "tabVisual", "tabRaw", "visualPane", "rawPane", "ruleSummary",
@@ -266,7 +301,7 @@
       "URL-REGEX", "DOMAIN-REGEX", "NETWORK", "MATCH", "FINAL",
     ];
 
-    let state = { files: [], root: "", public_base: "", target: {} };
+    let state = { files: [], root: "", roots: [], glob: "", public_base: "", target: {} };
     let clients = [];
     let currentFile = null;
     let content = "";
@@ -763,10 +798,17 @@
         state = {
           files: Array.isArray(payload.files) ? payload.files : [],
           root: payload.root || "",
+          roots: Array.isArray(payload.roots) ? payload.roots : [],
+          glob: payload.glob || "",
           public_base: payload.public_base || "",
           target: payload.target && typeof payload.target === "object" ? payload.target : {},
         };
-        el.rootPath.textContent = state.root || "—";
+        el.rulesDirs.value = (state.roots.length ? state.roots : [state.root]).filter(Boolean).join("\n");
+        el.rulesGlob.value = state.glob || "*/mihomo.yaml";
+        el.rulePublicBase.value = state.public_base || "";
+        el.targetIp.value = state.target.ip || "";
+        el.targetName.value = state.target.name || "";
+        el.rootPath.textContent = state.roots.length ? state.roots.join(" · ") : (state.root || "—");
         renderFileList();
         if (state.files.length) {
           const opened = await openFile(state.files[0].id);
@@ -778,6 +820,42 @@
         }
       } catch (error) {
         setStatus("识别失败：" + error.message, "error");
+      }
+    }
+
+    async function saveRuleConfig() {
+      const directories = el.rulesDirs.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+      const glob = el.rulesGlob.value.trim() || "*/mihomo.yaml";
+      if (!directories.length) {
+        setStatus("至少配置一个规则目录。", "error");
+        return;
+      }
+      el.saveRuleConfig.disabled = true;
+      setStatus("正在保存识别设置…");
+      try {
+        const payload = await api("/api/proxy-traffic/rules/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            directories,
+            glob,
+            public_base: el.rulePublicBase.value.trim(),
+            target: {
+              ip: el.targetIp.value.trim(),
+              name: el.targetName.value.trim(),
+            },
+          }),
+        });
+        await loadState();
+        await loadClients();
+        setStatus(
+          "识别设置已保存，当前识别到 " + state.files.length + " 个规则文件。",
+          payload.ok ? "ok" : "error",
+        );
+      } catch (error) {
+        setStatus("保存识别设置失败：" + error.message, "error");
+      } finally {
+        el.saveRuleConfig.disabled = false;
       }
     }
 
@@ -864,6 +942,7 @@
     }
 
     el.refreshRules.addEventListener("click", loadState);
+    el.saveRuleConfig.addEventListener("click", saveRuleConfig);
     el.refreshFile.addEventListener("click", () => {
       if (currentFile) openFile(currentFile.id);
     });
