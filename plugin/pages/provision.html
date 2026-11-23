@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>创建 sing-box 节点</title>
+  <title>创建代理节点</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -61,10 +61,12 @@
     input[type="checkbox"] { width: auto; accent-color: var(--accent); }
     .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; }
     details.advanced {
-      margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+      grid-column: 1 / -1;
+      margin-top: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
     }
     details.advanced summary { cursor: pointer; color: var(--text); font-size: 13px; font-weight: 650; }
     details.advanced .grid { margin-top: 14px; }
+    .kernel-hidden { display: none !important; }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     button {
       border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px;
@@ -84,16 +86,20 @@
     .result { margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
     .result a { color: var(--accent); overflow-wrap: anywhere; }
     .hint { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 680px) {
+      body { padding: 14px; }
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <main class="shell">
     <div class="eyebrow">PROXY TRAFFIC · NODE PROVISION</div>
-    <h1>创建 sing-box 节点</h1>
-    <p class="subtitle">通过 Komari 远程执行，在节点上创建 VLESS + Reality 入站，并启用 Clash API 供流量统计使用。首版只支持 VLESS + Reality。</p>
+    <h1>创建代理节点</h1>
+    <p class="subtitle">通过 Komari 远程执行，在节点上创建或更新 VLESS + Reality 入站。支持 sing-box 与 Xray-core，并自动把节点写入订阅节点库。</p>
 
     <div class="warning">
-      <strong>会修改节点配置：</strong>脚本会合并 sing-box 配置、生成备份、校验配置并重启 `sing-box` 服务。不会覆盖已有 tag；如果端口被占用或配置校验失败，脚本会停止。请先确认节点和参数。
+      <strong>会修改节点配置：</strong>脚本会读取现有配置、创建备份、合并入站、校验配置并重启对应服务。校验或重启失败时会自动恢复原配置；同名 tag 仅在明确勾选更新时才会修改。
     </div>
 
     <section class="panel">
@@ -101,6 +107,13 @@
         <div class="field full">
           <label for="clientSelect">目标节点</label>
           <select id="clientSelect"></select>
+        </div>
+        <div class="field">
+          <label for="kernel">服务端内核</label>
+          <select id="kernel">
+            <option value="sing-box">sing-box</option>
+            <option value="xray">Xray-core</option>
+          </select>
         </div>
         <div class="field">
           <label for="tag">入站 tag</label>
@@ -122,7 +135,7 @@
           </datalist>
         </div>
         <div class="field">
-          <label for="service">sing-box 服务名</label>
+          <label for="service">服务名</label>
           <input id="service" value="sing-box">
         </div>
         <div class="field">
@@ -133,6 +146,11 @@
           <label for="serverHost">分享链接中的服务器地址（留空自动用节点 IP）</label>
           <input id="serverHost" placeholder="203.0.113.10 或 node.example.com">
         </div>
+        <div class="field full xray-only kernel-hidden">
+          <label for="accessLog">Xray access log（供降级流量统计）</label>
+          <input id="accessLog" value="/var/log/xray/access.log">
+        </div>
+
         <details class="advanced">
           <summary>高级设置</summary>
           <div class="grid">
@@ -145,7 +163,7 @@
               <input id="handshakePort" type="number" min="1" max="65535" value="443">
             </div>
             <div class="field">
-              <label for="userName">用户名称</label>
+              <label for="userName">用户名称 / Email</label>
               <input id="userName" value="default" maxlength="80">
             </div>
             <div class="field">
@@ -155,19 +173,27 @@
                 <option value="">不启用 Flow</option>
               </select>
             </div>
-            <div class="field">
+            <div class="field singbox-only">
               <label for="clashController">Clash API 监听地址</label>
               <input id="clashController" value="127.0.0.1:9090">
             </div>
-            <div class="field">
+            <div class="field singbox-only">
               <label for="clashSecretPath">Clash API secret 文件路径</label>
               <input id="clashSecretPath" value="/etc/proxy-traffic/clash-api-secret">
             </div>
+            <div class="field full">
+              <label class="check"><input id="replaceExisting" type="checkbox"> tag 已存在时更新该入站（sing-box 会更换凭据；Xray 默认保留现有用户凭据）</label>
+            </div>
+            <div class="field full xray-only kernel-hidden">
+              <label class="check"><input id="preserveCredentials" type="checkbox" checked> Xray 更新时保留现有 UUID、Reality 私钥和 short_id</label>
+            </div>
           </div>
         </details>
+
         <div class="field full">
-          <label class="check"><input id="install" type="checkbox"> 节点未安装 sing-box 时，先执行官方安装脚本（会修改系统）</label>
-          <label class="check"><input id="confirm" type="checkbox"> 我确认修改该节点的 sing-box 配置并重启服务</label>
+          <label class="check"><input id="install" type="checkbox"> 节点未安装对应内核时，先执行官方安装脚本（会修改系统）</label>
+          <label class="check"><input id="saveToLibrary" type="checkbox" checked> 创建成功后自动写入订阅节点库</label>
+          <label class="check"><input id="confirm" type="checkbox"> 我确认修改该节点的配置并重启服务</label>
         </div>
       </div>
 
@@ -180,15 +206,16 @@
       <div id="status" class="status"></div>
       <pre id="previewBox" hidden></pre>
       <div id="result" class="result" hidden></div>
-      <p class="hint">部署成功后，还需要确认云厂商防火墙放行端口，并在采集器配置里使用生成的 Clash API secret。若节点未部署 collector，流量排行不会自动出现。</p>
+      <p class="hint">部署成功后还需要放行云厂商防火墙端口。sing-box 使用 Clash API 完整统计；Xray 使用 access log 降级统计，采集器用户需要能读取该日志。</p>
     </section>
   </main>
 
   <script>
     const el = Object.fromEntries([
-      "clientSelect", "tag", "port", "sni", "service", "configPath", "serverHost",
-      "listen", "handshakePort", "userName", "flow", "clashController", "clashSecretPath",
-      "install", "confirm", "refreshClients", "recommend", "preview", "apply", "status", "previewBox", "result",
+      "clientSelect", "kernel", "tag", "port", "sni", "service", "configPath", "serverHost",
+      "accessLog", "listen", "handshakePort", "userName", "flow", "clashController",
+      "clashSecretPath", "replaceExisting", "preserveCredentials", "install", "saveToLibrary",
+      "confirm", "refreshClients", "recommend", "preview", "apply", "status", "previewBox", "result",
     ].map((id) => [id, document.getElementById(id)]));
 
     let clients = [];
@@ -208,6 +235,38 @@
 
     function selectedClient() {
       return clients.find((client) => client.uuid === el.clientSelect.value) || null;
+    }
+
+    function kernelLabel(kernel) {
+      return kernel === "xray" ? "Xray-core" : "sing-box";
+    }
+
+    function syncKernelFields() {
+      const kernel = el.kernel.value;
+      document.querySelectorAll(".singbox-only").forEach((node) => {
+        node.classList.toggle("kernel-hidden", kernel !== "sing-box");
+      });
+      document.querySelectorAll(".xray-only").forEach((node) => {
+        node.classList.toggle("kernel-hidden", kernel !== "xray");
+      });
+    }
+
+    function applyKernelDefaults() {
+      if (el.kernel.value === "xray") {
+        el.service.value = "xray";
+        el.configPath.value = "/usr/local/etc/xray/config.json";
+        el.listen.value = "0.0.0.0";
+        el.accessLog.value = "/var/log/xray/access.log";
+        el.preserveCredentials.checked = true;
+      } else {
+        el.service.value = "sing-box";
+        el.configPath.value = "/etc/sing-box/config.json";
+        el.listen.value = "::";
+        el.clashController.value = "127.0.0.1:9090";
+        el.clashSecretPath.value = "/etc/proxy-traffic/clash-api-secret";
+      }
+      syncKernelFields();
+      invalidatePreview();
     }
 
     async function loadClients() {
@@ -244,20 +303,18 @@
       el.tag.value = "vless-reality";
       el.port.value = "443";
       el.sni.value = "www.microsoft.com";
-      el.service.value = "sing-box";
-      el.configPath.value = "/etc/sing-box/config.json";
-      el.listen.value = "::";
       el.handshakePort.value = "443";
       el.userName.value = "default";
       el.flow.value = "xtls-rprx-vision";
-      el.clashController.value = "127.0.0.1:9090";
-      el.clashSecretPath.value = "/etc/proxy-traffic/clash-api-secret";
       el.serverHost.value = client && (client.ipv4 || client.ipv6) || "";
       el.install.checked = false;
-      invalidatePreview();
+      el.replaceExisting.checked = false;
+      el.saveToLibrary.checked = true;
+      el.confirm.checked = false;
+      applyKernelDefaults();
       try {
         buildCommand();
-        setStatus("已填充推荐配置并生成部署脚本，确认节点和端口后勾选确认即可执行。", "ok");
+        setStatus("已填充 " + kernelLabel(el.kernel.value) + " 推荐配置并生成部署脚本。确认节点和端口后勾选确认即可执行。", "ok");
       } catch (error) {
         setStatus(error.message, "error");
       }
@@ -266,6 +323,8 @@
     function getParams() {
       const client = selectedClient();
       if (!client) throw new Error("请选择目标节点");
+      const kernel = el.kernel.value;
+      if (kernel !== "sing-box" && kernel !== "xray") throw new Error("不支持的内核");
       const tag = el.tag.value.trim();
       if (!/^[A-Za-z0-9._:-]{1,64}$/.test(tag)) throw new Error("入站 tag 只能包含字母、数字、点、下划线、冒号和短横线");
       const port = Number(el.port.value);
@@ -283,26 +342,58 @@
       const userName = el.userName.value.trim();
       if (!userName || userName.length > 80) throw new Error("用户名称不能为空且不能超过 80 字符");
       const flow = el.flow.value;
+      const accessLog = el.accessLog.value.trim();
+      if (kernel === "xray" && accessLog && !accessLog.startsWith("/")) throw new Error("access log 必须是绝对路径");
       const clashController = el.clashController.value.trim();
-      if (!/^[^\s:]+:\d{1,5}$/.test(clashController)) throw new Error("Clash API 监听地址格式应为 host:port");
+      if (kernel === "sing-box" && !/^[^\s:]+:\d{1,5}$/.test(clashController)) throw new Error("Clash API 监听地址格式应为 host:port");
       const clashSecretPath = el.clashSecretPath.value.trim();
-      if (!clashSecretPath.startsWith("/")) throw new Error("Clash API secret 必须是绝对路径");
+      if (kernel === "sing-box" && !clashSecretPath.startsWith("/")) throw new Error("Clash API secret 必须是绝对路径");
       return {
+        kernel,
         client_uuid: client.uuid,
         client_name: client.name,
         client_ipv4: client.ipv4 || "",
         client_ipv6: client.ipv6 || "",
         tag, port, sni, service, config_path: configPath,
         listen, handshake_port: handshakePort, user_name: userName, flow,
+        access_log: kernel === "xray" ? accessLog : "",
         clash_controller: clashController, clash_secret_path: clashSecretPath,
         server_host: el.serverHost.value.trim(),
         install: el.install.checked,
+        replace_existing: el.replaceExisting.checked,
+        preserve_credentials: kernel === "xray" && el.preserveCredentials.checked,
       };
     }
 
-    function pythonDeployScript(params) {
+    function rollbackBlock() {
+      return String.raw`
+def restore_config(message):
+    try:
+        if original_text is None:
+            if config_path.exists():
+                config_path.unlink()
+        else:
+            temporary = config_path.with_name(config_path.name + ".rollback")
+            temporary.write_text(original_text, encoding="utf-8")
+            os.chmod(temporary, original_mode)
+            try:
+                shutil.chown(temporary, user="root", group="xray")
+            except Exception:
+                pass
+            os.replace(temporary, config_path)
+    except Exception as restore_error:
+        fail(message + "；恢复配置失败：" + str(restore_error))
+    try:
+        subprocess.run(["systemctl", "restart", params["service"]], check=False)
+    except Exception:
+        pass
+    fail(message + "；已恢复原配置")
+`;
+    }
+
+    function pythonSingBoxScript(params) {
       const encoded = b64(JSON.stringify(params));
-      return String.raw`import base64
+      return (String.raw`import base64
 import datetime
 import json
 import os
@@ -331,6 +422,35 @@ binary = shutil.which("sing-box") or "/usr/local/bin/sing-box"
 if not os.path.isfile(binary):
     fail("sing-box 未安装；勾选安装选项或先手动安装")
 
+config_path = pathlib.Path(params["config_path"])
+original_text = None
+original_mode = 0o600
+backup = ""
+if config_path.exists():
+    try:
+        original_text = config_path.read_text(encoding="utf-8")
+        original_mode = config_path.stat().st_mode & 0o777
+        config = json.loads(original_text)
+    except Exception as exc:
+        fail("读取现有配置失败：" + str(exc))
+    backup = str(config_path) + ".bak-" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    shutil.copy2(config_path, backup)
+else:
+    config = {
+        "log": {"level": "info"},
+        "inbounds": [],
+        "outbounds": [{"type": "direct", "tag": "direct"}],
+    }
+if not isinstance(config, dict):
+    fail("现有配置的根节点不是对象")
+
+inbounds = config.setdefault("inbounds", [])
+if not isinstance(inbounds, list):
+    fail("现有配置的 inbounds 不是数组")
+existing = next((item for item in inbounds if isinstance(item, dict) and item.get("tag") == params["tag"]), None)
+if existing is not None and not params.get("replace_existing"):
+    fail("入站 tag 已存在；如需修改请勾选“tag 已存在时更新该入站”")
+
 try:
     uuid = output([binary, "generate", "uuid"])
     keypair = output([binary, "generate", "reality-keypair"])
@@ -352,36 +472,15 @@ if not private_key or not public_key:
     fail("无法解析 reality-keypair 输出：" + keypair)
 
 short_id = secrets.token_hex(4)
-config_path = pathlib.Path(params["config_path"])
-backup = ""
-if config_path.exists():
-    try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        fail("读取现有配置失败：" + str(exc))
-    backup = str(config_path) + ".bak-" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    shutil.copy2(config_path, backup)
-else:
-    config = {
-        "log": {"level": "info"},
-        "inbounds": [],
-        "outbounds": [{"type": "direct", "tag": "direct"}],
-    }
-if not isinstance(config, dict):
-    fail("现有配置的根节点不是对象")
-
-inbounds = config.setdefault("inbounds", [])
-if not isinstance(inbounds, list):
-    fail("现有配置的 inbounds 不是数组")
-if any(isinstance(item, dict) and item.get("tag") == params["tag"] for item in inbounds):
-    fail("入站 tag 已存在，未修改配置")
-
-inbounds.append({
+user = {"name": params["user_name"], "uuid": uuid}
+if params.get("flow"):
+    user["flow"] = params["flow"]
+inbound = {
     "type": "vless",
     "tag": params["tag"],
     "listen": params["listen"],
     "listen_port": int(params["port"]),
-    "users": [{"name": params["user_name"], "uuid": uuid, "flow": params["flow"]}],
+    "users": [user],
     "tls": {
         "enabled": True,
         "server_name": params["sni"],
@@ -392,7 +491,10 @@ inbounds.append({
             "short_id": [short_id],
         },
     },
-})
+}
+if existing is not None:
+    inbounds.remove(existing)
+inbounds.append(inbound)
 
 outbounds = config.setdefault("outbounds", [])
 if not isinstance(outbounds, list):
@@ -424,26 +526,42 @@ try:
     shutil.chown(secret_path, user="root", group="proxy-traffic")
 except Exception:
     pass
-
+` + rollbackBlock() + String.raw`
 try:
     subprocess.run([binary, "check", "-c", str(config_path)], check=True)
     subprocess.run(["systemctl", "restart", params["service"]], check=True)
+    subprocess.run(["systemctl", "is-active", "--quiet", params["service"]], check=True)
 except subprocess.CalledProcessError as exc:
-    fail("配置校验或重启失败，已保留配置供排查：" + str(exc))
+    restore_config("配置校验或重启失败：" + str(exc))
 
 host = params.get("server_host") or params.get("client_ipv4") or params.get("client_ipv6") or "YOUR_SERVER_IP"
 if ":" in host and not host.startswith("["):
     host = "[" + host + "]"
+query = [
+    "encryption=none",
+    "security=reality",
+    "sni=" + urllib.parse.quote(params["sni"]),
+    "fp=chrome",
+    "pbk=" + urllib.parse.quote(public_key),
+    "sid=" + urllib.parse.quote(short_id),
+    "type=tcp",
+]
+if params.get("flow"):
+    query.insert(0, "flow=" + urllib.parse.quote(params["flow"]))
 link = (
     "vless://" + urllib.parse.quote(uuid) + "@" + host + ":" + str(params["port"]) +
-    "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" +
-    urllib.parse.quote(params["sni"]) + "&fp=chrome&pbk=" + urllib.parse.quote(public_key) +
-    "&sid=" + urllib.parse.quote(short_id) + "&type=tcp#" + urllib.parse.quote(params["tag"])
+    "?" + "&".join(query) + "#" + urllib.parse.quote(params["tag"])
 )
 print(json.dumps({
     "ok": True,
+    "kernel": "sing-box",
     "tag": params["tag"],
     "port": int(params["port"]),
+    "listen": params["listen"],
+    "sni": params["sni"],
+    "flow": params.get("flow", ""),
+    "fingerprint": "chrome",
+    "server_host": params.get("server_host") or params.get("client_ipv4") or params.get("client_ipv6") or "",
     "uuid": uuid,
     "public_key": public_key,
     "short_id": short_id,
@@ -454,17 +572,250 @@ print(json.dumps({
     "clash_api": clash_api.get("external_controller"),
     "clash_secret_file": str(secret_path),
 }, ensure_ascii=False))
-`.replace("__PARAMS__", encoded);
+`).replace("__PARAMS__", encoded);
+    }
+
+    function pythonXrayScript(params) {
+      const encoded = b64(JSON.stringify(params));
+      return (String.raw`import base64
+import datetime
+import json
+import os
+import pathlib
+import secrets
+import shutil
+import subprocess
+import sys
+import urllib.parse
+
+def fail(message):
+    print(json.dumps({"ok": False, "error": message}, ensure_ascii=False))
+    sys.exit(1)
+
+def output(command):
+    return subprocess.check_output(command, text=True, stderr=subprocess.STDOUT).strip()
+
+def parse_x25519(text):
+    private = ""
+    public = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized = key.lower().replace(" ", "").replace("(", "").replace(")", "")
+        if "private" in normalized:
+            private = value.strip()
+        if "public" in normalized or "password" in normalized:
+            public = value.strip()
+    return private, public
+
+params = json.loads(base64.b64decode("__PARAMS__").decode("utf-8"))
+if os.geteuid() != 0:
+    fail("需要 root 权限")
+
+if params.get("install"):
+    subprocess.run(
+        ["bash", "-c", "bash -c \"$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)\" @ install"],
+        check=True,
+    )
+
+binary = shutil.which("xray") or "/usr/local/bin/xray"
+if not os.path.isfile(binary):
+    fail("Xray-core 未安装；勾选安装选项或先手动安装")
+
+config_path = pathlib.Path(params["config_path"])
+original_text = None
+original_mode = 0o640
+backup = ""
+if config_path.exists():
+    try:
+        original_text = config_path.read_text(encoding="utf-8")
+        original_mode = config_path.stat().st_mode & 0o777
+        config = json.loads(original_text)
+    except Exception as exc:
+        fail("读取现有配置失败：" + str(exc))
+    backup = str(config_path) + ".bak-" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    shutil.copy2(config_path, backup)
+else:
+    config = {"log": {}, "inbounds": [], "outbounds": [{"protocol": "freedom", "tag": "direct"}]}
+if not isinstance(config, dict):
+    fail("现有配置的根节点不是对象")
+
+inbounds = config.setdefault("inbounds", [])
+if not isinstance(inbounds, list):
+    fail("现有配置的 inbounds 不是数组")
+existing = next((item for item in inbounds if isinstance(item, dict) and item.get("tag") == params["tag"]), None)
+if existing is not None and not params.get("replace_existing"):
+    fail("入站 tag 已存在；如需修改请勾选“tag 已存在时更新该入站”")
+
+old_clients = []
+old_private = ""
+old_short_id = ""
+if isinstance(existing, dict):
+    settings = existing.get("settings") or {}
+    if isinstance(settings, dict) and isinstance(settings.get("clients"), list):
+        old_clients = [item for item in settings["clients"] if isinstance(item, dict)]
+    stream = existing.get("streamSettings") or {}
+    if isinstance(stream, dict):
+        reality = stream.get("realitySettings") or {}
+        if isinstance(reality, dict):
+            old_private = str(reality.get("privateKey") or "").strip()
+            short_ids = reality.get("shortIds") or []
+            if isinstance(short_ids, list) and short_ids:
+                old_short_id = str(short_ids[0])
+
+reuse = bool(existing is not None and params.get("preserve_credentials") and old_private)
+uuid = ""
+private_key = ""
+public_key = ""
+short_id = ""
+if reuse:
+    match = next(
+        (item for item in old_clients if str(item.get("email") or "") == params["user_name"]),
+        old_clients[0] if old_clients else {},
+    )
+    uuid = str(match.get("id") or "").strip()
+    private_key = old_private
+    short_id = old_short_id or secrets.token_hex(4)
+    if uuid:
+        try:
+            _, public_key = parse_x25519(output([binary, "x25519", "-i", private_key]))
+        except subprocess.CalledProcessError as exc:
+            fail("从现有私钥推导公钥失败：" + str(exc))
+
+if not uuid or not private_key or not public_key:
+    try:
+        uuid = output([binary, "uuid"])
+        private_key, public_key = parse_x25519(output([binary, "x25519"]))
+    except subprocess.CalledProcessError as exc:
+        fail("生成凭据失败：" + str(exc))
+    short_id = secrets.token_hex(4)
+if not uuid or not private_key or not public_key:
+    fail("无法生成或解析 VLESS / Reality 凭据")
+
+client = {"id": uuid, "email": params["user_name"]}
+if params.get("flow"):
+    client["flow"] = params["flow"]
+clients = [item for item in old_clients if str(item.get("email") or "") != params["user_name"]]
+clients.append(client)
+inbound = {
+    "tag": params["tag"],
+    "listen": params["listen"],
+    "port": int(params["port"]),
+    "protocol": "vless",
+    "settings": {"clients": clients, "decryption": "none"},
+    "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+            "show": False,
+            "dest": params["sni"] + ":" + str(params["handshake_port"]),
+            "xver": 0,
+            "serverNames": [params["sni"]],
+            "privateKey": private_key,
+            "shortIds": [short_id],
+        },
+    },
+    "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
+}
+if existing is not None:
+    inbounds.remove(existing)
+inbounds.append(inbound)
+
+outbounds = config.setdefault("outbounds", [])
+if not isinstance(outbounds, list):
+    fail("现有配置的 outbounds 不是数组")
+if not outbounds:
+    outbounds.append({"protocol": "freedom", "tag": "direct"})
+
+access_log = ""
+if params.get("access_log"):
+    log_config = config.setdefault("log", {})
+    if not isinstance(log_config, dict):
+        fail("现有配置的 log 不是对象")
+    if not log_config.get("access"):
+        log_config["access"] = params["access_log"]
+    access_log = str(log_config.get("access") or "")
+    log_path = pathlib.Path(access_log)
+    if not log_path.is_absolute():
+        fail("access log 必须是绝对路径")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.chown(log_path.parent, user="xray", group="xray")
+        os.chmod(log_path.parent, 0o750)
+        log_path.touch(exist_ok=True)
+        shutil.chown(log_path, user="xray", group="xray")
+        os.chmod(log_path, 0o640)
+    except Exception:
+        pass
+
+config_path.parent.mkdir(parents=True, exist_ok=True)
+temporary = config_path.with_name(config_path.name + ".tmp")
+temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+os.chmod(temporary, 0o640)
+try:
+    shutil.chown(temporary, user="root", group="xray")
+except Exception:
+    pass
+os.replace(temporary, config_path)
+` + rollbackBlock() + String.raw`
+try:
+    subprocess.run([binary, "run", "-test", "-c", str(config_path)], check=True)
+    subprocess.run(["systemctl", "restart", params["service"]], check=True)
+    subprocess.run(["systemctl", "is-active", "--quiet", params["service"]], check=True)
+except subprocess.CalledProcessError as exc:
+    restore_config("配置校验或重启失败：" + str(exc))
+
+host = params.get("server_host") or params.get("client_ipv4") or params.get("client_ipv6") or "YOUR_SERVER_IP"
+if ":" in host and not host.startswith("["):
+    host = "[" + host + "]"
+query = [
+    "encryption=none",
+    "security=reality",
+    "sni=" + urllib.parse.quote(params["sni"]),
+    "fp=chrome",
+    "pbk=" + urllib.parse.quote(public_key),
+    "sid=" + urllib.parse.quote(short_id),
+    "type=tcp",
+]
+if params.get("flow"):
+    query.insert(0, "flow=" + urllib.parse.quote(params["flow"]))
+link = (
+    "vless://" + urllib.parse.quote(uuid) + "@" + host + ":" + str(params["port"]) +
+    "?" + "&".join(query) + "#" + urllib.parse.quote(params["tag"])
+)
+print(json.dumps({
+    "ok": True,
+    "kernel": "xray",
+    "tag": params["tag"],
+    "port": int(params["port"]),
+    "listen": params["listen"],
+    "sni": params["sni"],
+    "flow": params.get("flow", ""),
+    "fingerprint": "chrome",
+    "server_host": params.get("server_host") or params.get("client_ipv4") or params.get("client_ipv6") or "",
+    "uuid": uuid,
+    "public_key": public_key,
+    "short_id": short_id,
+    "share_link": link,
+    "config_path": str(config_path),
+    "config_backup": backup,
+    "service": params["service"],
+    "access_log": access_log,
+    "credential_reused": reuse,
+}, ensure_ascii=False))
+`).replace("__PARAMS__", encoded);
     }
 
     function buildCommand() {
       const params = getParams();
-      const script = pythonDeployScript(params);
+      const script = params.kernel === "xray" ? pythonXrayScript(params) : pythonSingBoxScript(params);
       lastCommand = "# komari-proxy-traffic-provision\nset -e\npython3 - <<'PY'\n" + script + "\nPY";
       el.previewBox.hidden = false;
       el.previewBox.textContent = lastCommand;
       el.apply.disabled = !el.confirm.checked;
-      setStatus("部署脚本已生成。确认参数并勾选确认后执行。", "ok");
+      setStatus("已生成 " + kernelLabel(params.kernel) + " 部署脚本。确认参数并勾选确认后执行。", "ok");
       el.result.hidden = true;
     }
 
@@ -482,13 +833,40 @@ print(json.dumps({
           continue;
         }
         const resultText = results.map((item) => item.result || "").join("\n");
-        showResult(resultText);
+        await showResult(resultText);
         return;
       }
       throw new Error("任务等待超时，请到 Komari 任务记录查看");
     }
 
-    function showResult(text) {
+    async function saveProvisionedNode(data, client) {
+      const response = await fetch("/api/proxy-traffic/sub/nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: ((client.name ? client.name + " · " : "") + data.tag).slice(0, 120),
+          protocol: "vless",
+          server: data.server_host || client.ipv4 || client.ipv6,
+          port: data.port,
+          user_id: data.uuid,
+          flow: data.flow || "",
+          security: "reality",
+          sni: data.sni,
+          fingerprint: data.fingerprint || "chrome",
+          public_key: data.public_key,
+          short_id: data.short_id,
+          network: "tcp",
+          share_link: data.share_link,
+          external_key: "komari:" + client.uuid + ":" + data.tag,
+          origin_node_id: client.uuid,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "写入节点库失败");
+      return payload.node || payload;
+    }
+
+    async function showResult(text) {
       el.result.hidden = false;
       el.result.replaceChildren();
       let data = null;
@@ -498,7 +876,7 @@ print(json.dumps({
       }
       if (data && data.ok) {
         const title = document.createElement("div");
-        title.textContent = "节点创建成功";
+        title.textContent = kernelLabel(data.kernel) + " 节点创建成功";
         title.style.fontWeight = "700";
         el.result.appendChild(title);
         const link = document.createElement("div");
@@ -509,10 +887,28 @@ print(json.dumps({
         anchor.textContent = data.share_link;
         el.result.appendChild(link);
         el.result.appendChild(anchor);
+        if (data.credential_reused) {
+          const reused = document.createElement("div");
+          reused.className = "hint";
+          reused.textContent = "已保留现有 UUID、Reality 私钥和 short_id。";
+          el.result.appendChild(reused);
+        }
         const details = document.createElement("pre");
         details.textContent = JSON.stringify(data, null, 2);
         el.result.appendChild(details);
-        setStatus("节点创建成功。请放行端口并部署 collector。", "ok");
+        setStatus("节点创建成功。正在同步到订阅节点库…", "ok");
+        if (el.saveToLibrary.checked) {
+          try {
+            const client = selectedClient();
+            if (!client) throw new Error("找不到目标节点");
+            await saveProvisionedNode(data, client);
+            setStatus("节点创建成功，并已写入订阅节点库。请放行端口并部署采集器。", "ok");
+          } catch (error) {
+            setStatus("节点创建成功，但写入订阅节点库失败：" + error.message, "error");
+          }
+        } else {
+          setStatus("节点创建成功。请放行端口并部署采集器。", "ok");
+        }
       } else {
         const pre = document.createElement("pre");
         pre.textContent = text || "节点返回空结果";
@@ -525,6 +921,7 @@ print(json.dumps({
       lastCommand = "";
       el.previewBox.hidden = true;
       el.apply.disabled = true;
+      el.confirm.checked = false;
       if (el.status.textContent && !el.status.classList.contains("error")) {
         setStatus("参数已改变，请重新生成部署脚本。");
       }
@@ -566,10 +963,12 @@ print(json.dumps({
       const client = selectedClient();
       if (client) el.serverHost.value = client.ipv4 || client.ipv6 || "";
     });
+    el.kernel.addEventListener("change", applyKernelDefaults);
     el.recommend.addEventListener("click", applyRecommended);
-    [el.clientSelect, el.tag, el.port, el.sni, el.service, el.configPath, el.serverHost,
-      el.listen, el.handshakePort, el.userName, el.flow, el.clashController, el.clashSecretPath,
-      el.install].forEach((control) => {
+    [el.clientSelect, el.kernel, el.tag, el.port, el.sni, el.service, el.configPath,
+      el.serverHost, el.accessLog, el.listen, el.handshakePort, el.userName, el.flow,
+      el.clashController, el.clashSecretPath, el.replaceExisting, el.preserveCredentials,
+      el.install, el.saveToLibrary].forEach((control) => {
       control.addEventListener("change", invalidatePreview);
       control.addEventListener("input", invalidatePreview);
     });
@@ -581,6 +980,7 @@ print(json.dumps({
     });
     el.apply.addEventListener("click", apply);
 
+    syncKernelFields();
     loadClients();
   </script>
 </body>

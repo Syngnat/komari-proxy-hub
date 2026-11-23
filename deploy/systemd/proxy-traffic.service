@@ -12,6 +12,9 @@ Environment=PROXY_TRAFFIC_DB=/var/lib/proxy-traffic/aggregate.db
 Environment=PROXY_TRAFFIC_TOKEN_FILE=/etc/proxy-traffic/ingest-token
 Environment=PROXY_TRAFFIC_BIND=172.17.0.1
 Environment=PROXY_TRAFFIC_PORT=9460
+Environment=PROXY_TRAFFIC_SUB_BASE_URL=
+Environment=PROXY_TRAFFIC_RULES_DIR=/var/www/premium
+Environment=PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.syngnat.top
 ExecStart=/opt/proxy-traffic/venv/bin/python /opt/proxy-traffic/server.py
 Restart=always
 RestartSec=3s

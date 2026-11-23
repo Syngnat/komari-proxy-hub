@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：2.1.1
+> 当前版本：2.2.2
 
 ## 功能
 
@@ -20,8 +20,13 @@
 - 目标站点流量排行，显示每个站点的访问 IP 明细
 - 每个 IP 的域名明细，支持“正在活跃”排序
 - 过滤 IP-only、Cloudflare challenge、DNS / 连通性探针等噪声
-- 所有查询接口仅允许 Komari 管理员访问
-- 内置 sing-box 节点创建向导：通过 Komari 远程执行创建 VLESS + Reality 入站
+- 所有统计查询和管理接口仅允许 Komari 管理员访问；订阅链接按令牌公开访问
+- 内置 sing-box / Xray-core 节点创建向导：通过 Komari 远程执行创建或更新 VLESS + Reality 入站
+- 订阅节点库：支持自动收录创建成功的节点，也支持导入常见协议分享链接
+- 订阅管理：一个订阅可选多个节点，生成长链和短链
+- 同一订阅按客户端输出 mihomo / Clash、sing-box、Xray / v2rayN（base64）或明文链接
+- 订阅基址可使用 Komari 域名，也可使用独立域名
+- 分流规则可视化：自动识别订阅 YAML，规则表编辑、YAML 语法高亮、校验和原子保存
 
 ## 架构
 
@@ -35,17 +40,17 @@ HTTPS /api/proxy-traffic/ingest
           │
           ▼
 聚合服务 server.py :9460（SQLite）
-          │
-          │ Komari 插件 script.js 反向代理
-          ▼
-Komari 管理页 iframe（traffic.html）
+          ├─ Komari 插件 script.js 反向代理
+          │       └─ 管理页 iframe（traffic.html / provision.html / subscriptions.html / rules.html）
+          └─ 独立订阅域名 / Komari 非 /api 路由
+                  └─ /sub/<token>、/s/<code>
 ```
 
 组件说明：
 
 - `collector/collector.py`：部署在每个代理节点，读取 sing-box Clash API，默认采集全部入站连接，也支持按 `protocols` 白名单过滤。每个节点使用独立的 `node_id` / `node_name`。
-- `server/server.py`：部署在 Komari 主机，接收多个节点的数据，做 GeoIP、设备聚类、目标站点和查询接口。
-- `plugin/`：Komari 插件清单、路由代理和管理页。
+- `server/server.py`：部署在 Komari 主机，接收多个节点的数据，做 GeoIP、设备聚类、目标站点和查询接口；同时保存订阅节点、订阅令牌并生成客户端配置，读取订阅规则 YAML。
+- `plugin/`：Komari 插件清单、路由代理和管理页。公开订阅路由走 `/proxy-traffic-sub/*`，不使用 `/api` 前缀，因此 Komari 开启私有站点时仍可访问。
 
 ## 环境要求
 
@@ -118,19 +123,98 @@ Clash 模式把 `clash-secret` 放进 `collector-config/`；Xray 模式把 `mode
 
 collector 使用 `network_mode: host`，因此 `clash_api: http://127.0.0.1:9090` 可以直接访问宿主机上的 Clash API；该配置适用于 Linux。Docker 方式仍需要从 Komari 插件市场安装插件。
 
-### 创建 sing-box 节点
+### 创建代理节点
 
-插件安装后，在 Komari 的“插件功能”下打开“创建 sing-box 节点”。页面会通过 Komari 远程执行：
+插件安装后，在 Komari 的“插件功能”下打开“创建代理节点”。页面会通过 Komari 远程执行：
 
-1. 选择已接入 Komari 的目标节点。
-2. 点击“一键填充推荐配置”，自动填好端口、SNI、服务名和配置文件路径。
-3. 如需调整，展开“高级设置”修改监听地址、握手端口、用户名称、Flow 和 Clash API 参数。
-4. 可选先执行 sing-box 官方安装脚本。
-5. 合并配置、创建备份、校验配置并重启 sing-box。
+1. 选择已接入 Komari 的目标节点和服务端内核：`sing-box` 或 `Xray-core`。
+2. 点击“一键填充并生成”，自动填好端口、SNI、服务名和配置文件路径。
+3. 如需调整，展开“高级设置”修改监听地址、握手端口、用户名称、Flow、Clash API 或 Xray access log。
+4. 可选先执行对应内核的官方安装脚本。
+5. 合并配置、创建备份、校验配置并重启服务；失败时自动恢复原配置。
 
-首版只生成 **VLESS + Reality** 入站，不会覆盖已有 tag。成功后页面会输出分享链接、Clash API secret 路径和配置备份路径；还需要自行放行云防火墙端口并部署 collector。
+页面只生成 **VLESS + Reality** 入站。默认不会覆盖已有 tag；需要更新时勾选“tag 已存在时更新该入站”。Xray 更新默认保留现有 UUID、Reality 私钥和 `short_id`，sing-box 更新会重新生成凭据。
+
+创建成功后会输出分享链接、配置备份路径，并自动写入“订阅管理”的节点库。还需要自行放行云防火墙端口并部署 collector。
+
+#### Xray access log
+
+Xray 创建向导会把 `log.access` 指到页面填写的路径（默认 `/var/log/xray/access.log`）。Xray 官方安装脚本创建 `/var/log/xray` 为 `xray:xray`、权限 `700`；如果 collector 以 `proxy-traffic` 用户运行，需要让该用户能读取日志，例如：
+
+```bash
+sudo usermod -aG xray proxy-traffic
+sudo systemctl restart proxy-traffic-collector
+```
+
+采集器仍使用 `mode: "xray"` 降级统计连接次数和域名，不会伪造上下行字节数。
 
 该功能需要插件声明 `allowSystemRPC`，更新时 Komari 会重新请求权限确认。远程执行会修改节点配置，请只在明确目标节点上使用。
+
+### 订阅管理
+
+插件安装后打开“订阅管理”：
+
+1. 创建节点成功后，节点会自动出现在“订阅节点库”；也可以粘贴分享链接导入。
+2. 勾选该订阅要包含的节点；自用订阅可以选全部节点，付费订阅只选指定节点。
+3. 填写订阅基址，选择默认客户端格式，点击创建。
+4. 页面会给出长链和短链；短链只做 302 跳转到长链。
+
+勾选“包含全部节点”后，该订阅会自动包含节点库中所有启用节点，后续新增节点也会自动生效；适合自用订阅。付费订阅不要勾选，只选指定节点即可。
+
+订阅基址有两种写法：
+
+```text
+Komari 域名：https://komari.example.com/proxy-traffic-sub
+独立域名：  https://sub.example.com/sub
+```
+
+使用 Komari 域名时不需要额外 Nginx 配置。使用独立域名时，只反代 `/sub/` 前缀到聚合服务，不要暴露 `/api` 管理接口：
+
+```bash
+sudo install -m 0644 deploy/nginx-subscription.conf.example /etc/nginx/sites-available/proxy-traffic-sub.conf
+```
+
+修改 `server_name` 和证书路径后启用站点。客户端请求示例：
+
+```text
+https://sub.example.com/sub/<token>
+https://sub.example.com/sub/s/<short-code>
+```
+
+也可以显式指定格式：
+
+```text
+https://sub.example.com/sub/<token>?format=clash
+https://sub.example.com/sub/<token>?format=singbox
+https://sub.example.com/sub/<token>?format=base64
+```
+
+默认订阅格式为“自动识别 User-Agent”：Clash / mihomo 返回 YAML，sing-box 返回完整 JSON，其他客户端返回 base64 编码的分享链接。
+
+### 分流规则可视化
+
+插件会自动扫描 `PROXY_TRAFFIC_RULES_DIR` 下的 `*/mihomo.yaml`（默认 `/var/www/premium`）。在 BeroHost 当前结构下会识别出两个文件：
+
+- 多节点文件：自用订阅，包含全部节点。
+- 单节点文件：共享订阅，只包含 PPFlight。
+
+打开“分流规则”页面后可以：
+
+1. 选择订阅文件，查看规则数量、节点数、策略组和规则提供者。
+2. 在“可视规则”里按规则表增删改、上下移动，目标策略组从现有 `proxy-groups` 中选择。
+3. 切到“YAML 源码”直接编辑完整 YAML，编辑器带语法高亮。
+4. 保存前校验 YAML，然后在规则文件所在节点执行远程写入；原文件会生成 `mihomo.yaml.bak-时间戳-随机串` 备份，写入使用临时文件原子替换。
+
+可视规则编辑只重写 `rules:` 区块，其他配置保持原样；`rules:` 区块内的注释会在可视化保存时被规范化移除。需要保留注释时请使用“YAML 源码”模式。
+
+规则文件由 `proxy-traffic` 服务读取，保存动作通过 Komari `admin:exec` 在规则文件所在 VPS 上执行，因此插件服务本身不需要写 `/var/www/premium` 权限。页面默认优先选择名称含 `Bero` 或 IP 为 `94.103.173.47` 的节点；如果节点列表变化，请手动确认“执行节点”。
+
+如果使用 Docker 部署，需要把宿主机的 `/var/www/premium` 以只读方式挂载到聚合服务容器；保存仍然走 Komari 远程执行。若目录不同，修改：
+
+```bash
+PROXY_TRAFFIC_RULES_DIR=/实际/规则目录
+PROXY_TRAFFIC_RULE_PUBLIC_BASE=https://premium.example.com
+```
 
 ### 1. 部署聚合服务
 
@@ -322,7 +406,11 @@ https://github.com/Syngnat/komari-proxy-traffic/releases/latest/download/v1.json
 <komari-data>/plugin/proxy-traffic/
 ├── komari-plugin.json
 ├── script.js
-└── pages/traffic.html
+└── pages/
+    ├── traffic.html
+    ├── provision.html
+    ├── subscriptions.html
+    └── rules.html
 ```
 
 例如当前常见部署：
@@ -332,10 +420,13 @@ sudo install -d -m 0755 /opt/komari/data/plugin/proxy-traffic/pages
 sudo install -m 0644 plugin/komari-plugin.json /opt/komari/data/plugin/proxy-traffic/
 sudo install -m 0644 plugin/script.js /opt/komari/data/plugin/proxy-traffic/
 sudo install -m 0644 plugin/pages/traffic.html /opt/komari/data/plugin/proxy-traffic/pages/
+sudo install -m 0644 plugin/pages/provision.html /opt/komari/data/plugin/proxy-traffic/pages/
+sudo install -m 0644 plugin/pages/subscriptions.html /opt/komari/data/plugin/proxy-traffic/pages/
+sudo install -m 0644 plugin/pages/rules.html /opt/komari/data/plugin/proxy-traffic/pages/
 docker restart komari
 ```
 
-在 Komari 管理后台确认插件已加载，并打开“代理流量排行”页面。
+在 Komari 管理后台确认插件已加载，并打开“代理流量排行”“创建代理节点”“订阅管理”页面。
 
 插件清单要求目录名与 `short` 一致，即 `proxy-traffic`。
 
@@ -352,6 +443,9 @@ docker restart komari
 | `PROXY_TRAFFIC_GEOIP_CITY` | `/opt/proxy-traffic/GeoLite2-City.mmdb` | 可选城市库 |
 | `PROXY_TRAFFIC_GEOIP_ASN` | `/opt/proxy-traffic/GeoLite2-ASN.mmdb` | 可选 ASN 库 |
 | `PROXY_TRAFFIC_GEOIP_CITY_FALLBACK` | `/opt/proxy-traffic/dbip-city-lite.mmdb` | 可选城市回退库 |
+| `PROXY_TRAFFIC_SUB_BASE_URL` | 空 | 可选默认订阅基址，例如 `https://komari.example.com/proxy-traffic-sub` 或 `https://sub.example.com/sub` |
+| `PROXY_TRAFFIC_RULES_DIR` | `/var/www/premium` | 分流规则 YAML 扫描目录，匹配 `*/mihomo.yaml` |
+| `PROXY_TRAFFIC_RULE_PUBLIC_BASE` | `https://premium.syngnat.top` | 规则文件对应的订阅域名基址 |
 | `IPINFO_TOKEN` | 空 | 可选 IPinfo token，不填也能用免费额度 |
 
 ### 采集器配置
@@ -392,15 +486,26 @@ docker restart komari
 - ingest token 使用 Bearer 认证和常量时间比较；请使用至少 24 字符的随机值。
 - 只通过 HTTPS 暴露 `/api/proxy-traffic/ingest`，不要把聚合服务的其他路径直接暴露到公网。
 - Komari 插件的查询路由只允许带有 `admin` 角色的管理员访问。
+- 订阅令牌是访问凭据；长链和短链都应视为密码，不要公开贴出。泄露后在“订阅管理”里轮换令牌。
+- 独立订阅域名只反代 `/sub/`，不要反代 `/api/proxy-traffic/sub/*` 管理接口。
+- 规则页会读取并展示完整 YAML（可能包含节点凭据和管理密码），只对 Komari 管理员开放；不要截图或外传。
+- 保存规则会先备份原文件，再原子替换；保存动作通过 Komari 远程执行。执行节点选错时通常会因目标路径不存在而失败，不会自动遍历其他路径。
 - 建议保持 `UMask=0077`，并确保 `/var/lib/proxy-traffic` 仅服务用户可读。
 
 ## 验证
 
 ```bash
 python3 -m json.tool plugin/komari-plugin.json >/dev/null
+python3 -m unittest discover -s tests -v
 node --check plugin/script.js
 awk '/<script>/{f=1;next}/<\/script>/{f=0}f' plugin/pages/traffic.html > /tmp/traffic.js
 node --check /tmp/traffic.js
+awk '/<script>/{f=1;next}/<\/script>/{f=0}f' plugin/pages/provision.html > /tmp/provision.js
+awk '/<script>/{f=1;next}/<\/script>/{f=0}f' plugin/pages/subscriptions.html > /tmp/subscriptions.js
+awk '/<script>/{f=1;next}/<\/script>/{f=0}f' plugin/pages/rules.html > /tmp/rules.js
+node --check /tmp/provision.js
+node --check /tmp/subscriptions.js
+node --check /tmp/rules.js
 python3 -m py_compile server/server.py collector/collector.py
 ```
 

@@ -11,6 +11,9 @@ services:
       PROXY_TRAFFIC_PORT: 9460
       PROXY_TRAFFIC_DB: /var/lib/proxy-traffic/aggregate.db
       PROXY_TRAFFIC_INGEST_TOKEN: ${PROXY_TRAFFIC_INGEST_TOKEN:?set PROXY_TRAFFIC_INGEST_TOKEN in .env}
+      PROXY_TRAFFIC_SUB_BASE_URL: ${PROXY_TRAFFIC_SUB_BASE_URL:-}
+      PROXY_TRAFFIC_RULES_DIR: ${PROXY_TRAFFIC_RULES_DIR:-/var/www/premium}
+      PROXY_TRAFFIC_RULE_PUBLIC_BASE: ${PROXY_TRAFFIC_RULE_PUBLIC_BASE:-https://premium.syngnat.top}
       IPINFO_TOKEN: ${IPINFO_TOKEN:-}
       PROXY_TRAFFIC_GEOIP_CITY: /opt/proxy-traffic/GeoLite2-City.mmdb
       PROXY_TRAFFIC_GEOIP_ASN: /opt/proxy-traffic/GeoLite2-ASN.mmdb

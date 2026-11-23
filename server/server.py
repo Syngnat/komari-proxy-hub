@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import ipaddress
@@ -8,6 +10,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
 import sys
 import threading
@@ -18,7 +21,12 @@ import uuid
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 VENDOR_DIR = Path(__file__).resolve().parent / 'vendor'
 if VENDOR_DIR.is_dir():
@@ -51,8 +59,19 @@ ONLINE_WINDOW_SECONDS = 3 * 60
 IPINFO_TIMEOUT_SECONDS = 3
 AUTO_GAP_MINUTES = 10
 AUTO_HIGH_CONFIDENCE_MINUTES = 3
+SUB_BASE_URL = os.environ.get('PROXY_TRAFFIC_SUB_BASE_URL', '').strip().rstrip('/')
+RULE_DIR = Path(os.environ.get('PROXY_TRAFFIC_RULES_DIR', '/var/www/premium'))
+RULE_PUBLIC_BASE = os.environ.get(
+    'PROXY_TRAFFIC_RULE_PUBLIC_BASE', 'https://premium.syngnat.top'
+).strip().rstrip('/')
 NODE_ID_RE = re.compile(r'^[A-Za-z0-9._:-]{1,64}$')
 SITE_RE = re.compile(r'^[A-Za-z0-9._:-]{1,253}$')
+SUB_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,128}$')
+SUB_CODE_RE = re.compile(r'^[A-Za-z0-9_-]{4,32}$')
+SUBSCRIPTION_PROTOCOLS = {
+    'vless', 'vmess', 'trojan', 'ss', 'shadowsocks', 'hysteria2',
+    'tuic', 'anytls', 'raw',
+}
 NOISE_SITE_EXACT = {
     'ab.chatgpt.com',
     'accounts.google.com',
@@ -196,6 +215,54 @@ def init_db() -> None:
                 ON site_minute_agg(node_id, minute_ms);
             CREATE INDEX IF NOT EXISTS idx_site_minute_agg_site
                 ON site_minute_agg(node_id, site, minute_ms);
+            CREATE TABLE IF NOT EXISTS subscription_nodes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL,
+                server TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '',
+                password TEXT NOT NULL DEFAULT '',
+                flow TEXT NOT NULL DEFAULT '',
+                security TEXT NOT NULL DEFAULT '',
+                sni TEXT NOT NULL DEFAULT '',
+                fingerprint TEXT NOT NULL DEFAULT '',
+                public_key TEXT NOT NULL DEFAULT '',
+                short_id TEXT NOT NULL DEFAULT '',
+                network TEXT NOT NULL DEFAULT '',
+                host TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                service_name TEXT NOT NULL DEFAULT '',
+                extra_json TEXT NOT NULL DEFAULT '{}',
+                share_link TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                external_key TEXT UNIQUE,
+                origin_node_id TEXT NOT NULL DEFAULT '',
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_subscription_nodes_updated
+                ON subscription_nodes(updated_at_ms);
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                short_code TEXT NOT NULL UNIQUE,
+                base_url TEXT NOT NULL DEFAULT '',
+                format TEXT NOT NULL DEFAULT 'auto',
+                include_all INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS subscription_node_map (
+                subscription_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (subscription_id, node_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_subscription_node_map_node
+                ON subscription_node_map(node_id);
             '''
         )
         ip_geo_columns = {
@@ -211,6 +278,13 @@ def init_db() -> None:
         if 'metric_mode' not in node_columns:
             conn.execute(
                 "ALTER TABLE nodes ADD COLUMN metric_mode TEXT NOT NULL DEFAULT 'traffic'"
+            )
+        subscription_columns = {
+            row[1] for row in conn.execute('PRAGMA table_info(subscriptions)')
+        }
+        if 'include_all' not in subscription_columns:
+            conn.execute(
+                'ALTER TABLE subscriptions ADD COLUMN include_all INTEGER NOT NULL DEFAULT 0'
             )
         conn.commit()
         DB_PATH.chmod(0o600)
@@ -1284,13 +1358,1441 @@ def health() -> dict:
     }
 
 
+def _clean_text(
+    value: object,
+    field: str,
+    maximum: int = 255,
+    required: bool = False,
+) -> str:
+    if value is None:
+        text = ''
+    elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+        text = str(value).strip()
+    else:
+        raise ValueError(f'invalid {field}')
+    if len(text) > maximum:
+        raise ValueError(f'{field} is too long')
+    if any(ord(char) < 32 or ord(char) == 127 for char in text):
+        raise ValueError(f'invalid {field}')
+    if required and not text:
+        raise ValueError(f'{field} is required')
+    return text
+
+
+def _safe_server(value: object) -> str:
+    server = _clean_text(value, 'server', 253, True)
+    if server.startswith('[') and server.endswith(']'):
+        server = server[1:-1]
+    try:
+        return ipaddress.ip_address(server).compressed
+    except ValueError:
+        pass
+    if not re.fullmatch(
+        r'(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*'
+        r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?',
+        server,
+    ):
+        raise ValueError('invalid server')
+    return server
+
+
+def _safe_port(value: object) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('invalid port') from exc
+    if port < 1 or port > 65535:
+        raise ValueError('port is out of range')
+    return port
+
+
+def _safe_url(value: object, field: str = 'base_url') -> str:
+    text = _clean_text(value, field, 512)
+    if not text:
+        return ''
+    parsed = urlsplit(text)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        raise ValueError(f'{field} must be an http(s) URL')
+    if parsed.query or parsed.fragment or parsed.username or parsed.password:
+        raise ValueError(f'{field} must not contain credentials, query or fragment')
+    try:
+        if parsed.port is not None and (parsed.port < 1 or parsed.port > 65535):
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(f'{field} has an invalid port') from exc
+    return text.rstrip('/')
+
+
+def _decode_base64(value: str) -> str:
+    compact = re.sub(r'\s+', '', value)
+    compact += '=' * ((4 - len(compact) % 4) % 4)
+    try:
+        return base64.urlsafe_b64decode(compact.encode('ascii')).decode('utf-8')
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError('invalid base64 payload') from exc
+
+
+def _parse_extra(value: object) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError('extra must be a JSON object') from exc
+    if not isinstance(value, dict):
+        raise ValueError('extra must be an object')
+    encoded = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    if len(encoded) > 16384:
+        raise ValueError('extra is too large')
+    return value
+
+
+def _normalize_subscription_node(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError('node must be an object')
+    protocol = _clean_text(payload.get('protocol'), 'protocol', 24, True).lower()
+    if protocol == 'shadowsocks':
+        protocol = 'ss'
+    if protocol == 'hy2':
+        protocol = 'hysteria2'
+    if protocol not in SUBSCRIPTION_PROTOCOLS:
+        raise ValueError('unsupported protocol')
+    name = _clean_text(payload.get('name'), 'name', 120)
+    server = _safe_server(payload.get('server'))
+    if not name:
+        name = protocol.upper() + ' · ' + server
+    port = _safe_port(payload.get('port'))
+    user_id = _clean_text(payload.get('user_id'), 'user_id', 160)
+    password = _clean_text(payload.get('password'), 'password', 512)
+    flow = _clean_text(payload.get('flow'), 'flow', 64)
+    security = _clean_text(payload.get('security'), 'security', 16).lower()
+    if security not in ('', 'none', 'tls', 'reality'):
+        raise ValueError('unsupported security')
+    sni = _clean_text(payload.get('sni'), 'sni', 253)
+    fingerprint = _clean_text(payload.get('fingerprint'), 'fingerprint', 32)
+    public_key = _clean_text(payload.get('public_key'), 'public_key', 256)
+    short_id = _clean_text(payload.get('short_id'), 'short_id', 32)
+    network = _clean_text(payload.get('network'), 'network', 16).lower()
+    if network and network not in ('tcp', 'ws', 'grpc', 'http', 'h2', 'quic'):
+        raise ValueError('unsupported network')
+    host = _clean_text(payload.get('host'), 'host', 253)
+    path = _clean_text(payload.get('path'), 'path', 512)
+    service_name = _clean_text(payload.get('service_name'), 'service_name', 200)
+    share_link = _clean_text(payload.get('share_link'), 'share_link', 8192)
+    external_key = _clean_text(payload.get('external_key'), 'external_key', 240) or None
+    origin_node_id = _clean_text(payload.get('origin_node_id'), 'origin_node_id', 64)
+    extra = _parse_extra(payload.get('extra'))
+    for source, target in (
+        ('alter_id', 'alter_id'),
+        ('scy', 'scy'),
+        ('method', 'method'),
+        ('alpn', 'alpn'),
+        ('allow_insecure', 'allow_insecure'),
+        ('skip_cert_verify', 'skip_cert_verify'),
+        ('obfs', 'obfs'),
+        ('obfs_password', 'obfs_password'),
+        ('congestion_control', 'congestion_control'),
+        ('udp_relay_mode', 'udp_relay_mode'),
+        ('header_type', 'header_type'),
+    ):
+        if source in payload and payload.get(source) not in (None, ''):
+            extra[target] = payload[source]
+    if protocol == 'vless':
+        if not user_id:
+            raise ValueError('vless requires user_id')
+        if not network:
+            network = 'tcp'
+    elif protocol == 'vmess':
+        if not user_id:
+            raise ValueError('vmess requires user_id')
+        if not network:
+            network = 'tcp'
+    elif protocol in ('trojan', 'hysteria2', 'anytls'):
+        if not password:
+            raise ValueError(f'{protocol} requires password')
+    elif protocol == 'ss':
+        if not password or not str(extra.get('method') or '').strip():
+            raise ValueError('ss requires method and password')
+    elif protocol == 'tuic':
+        if not user_id or not password:
+            raise ValueError('tuic requires user_id and password')
+    elif protocol == 'raw':
+        if not share_link:
+            raise ValueError('raw protocol requires share_link')
+    if protocol in ('hysteria2', 'tuic', 'anytls') and not security:
+        security = 'tls'
+    if security == 'reality':
+        if not sni or not public_key:
+            raise ValueError('reality requires sni and public_key')
+        if short_id and (
+            len(short_id) % 2 != 0 or
+            not re.fullmatch(r'[0-9a-fA-F]{0,16}', short_id)
+        ):
+            raise ValueError('invalid reality short_id')
+        if not fingerprint:
+            fingerprint = 'chrome'
+        if not network:
+            network = 'tcp'
+    elif security == 'tls' and not fingerprint and protocol in ('vless', 'trojan', 'vmess'):
+        fingerprint = 'chrome'
+    record = {
+        'name': name,
+        'protocol': protocol,
+        'server': server,
+        'port': port,
+        'user_id': user_id,
+        'password': password,
+        'flow': flow,
+        'security': security,
+        'sni': sni,
+        'fingerprint': fingerprint,
+        'public_key': public_key,
+        'short_id': short_id,
+        'network': network,
+        'host': host,
+        'path': path,
+        'service_name': service_name,
+        'extra': extra,
+        'share_link': share_link,
+        'enabled': 1 if payload.get('enabled', True) else 0,
+        'external_key': external_key,
+        'origin_node_id': origin_node_id,
+    }
+    record['share_link'] = _node_uri(record)
+    return record
+
+
+def _node_from_row(row: sqlite3.Row) -> dict:
+    try:
+        extra = json.loads(row['extra_json'] or '{}')
+    except json.JSONDecodeError:
+        extra = {}
+    node = {
+        'id': row['id'],
+        'name': row['name'],
+        'protocol': row['protocol'],
+        'server': row['server'],
+        'port': int(row['port']),
+        'user_id': row['user_id'],
+        'password': row['password'],
+        'flow': row['flow'],
+        'security': row['security'],
+        'sni': row['sni'],
+        'fingerprint': row['fingerprint'],
+        'public_key': row['public_key'],
+        'short_id': row['short_id'],
+        'network': row['network'],
+        'host': row['host'],
+        'path': row['path'],
+        'service_name': row['service_name'],
+        'extra': extra if isinstance(extra, dict) else {},
+        'share_link': row['share_link'],
+        'enabled': bool(row['enabled']),
+        'external_key': row['external_key'] or '',
+        'origin_node_id': row['origin_node_id'],
+        'created_at_ms': int(row['created_at_ms']),
+        'updated_at_ms': int(row['updated_at_ms']),
+    }
+    node['uri'] = node['share_link'] or _node_uri(node)
+    return node
+
+
+def save_subscription_node(payload: object) -> dict:
+    record = _normalize_subscription_node(payload)
+    node_id = _clean_text(
+        payload.get('id') if isinstance(payload, dict) else '',
+        'id',
+        64,
+    )
+    if node_id and not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', node_id):
+        raise ValueError('invalid node id')
+    timestamp = now_ms()
+    conn = db_connect()
+    try:
+        existing = None
+        if node_id:
+            existing = conn.execute(
+                'SELECT * FROM subscription_nodes WHERE id = ?', (node_id,)
+            ).fetchone()
+        if existing is None and record['external_key']:
+            existing = conn.execute(
+                'SELECT * FROM subscription_nodes WHERE external_key = ?',
+                (record['external_key'],),
+            ).fetchone()
+        if existing is not None:
+            node_id = existing['id']
+            created_at = int(existing['created_at_ms'])
+        else:
+            node_id = node_id or uuid.uuid4().hex
+            created_at = timestamp
+        with conn:
+            conn.execute(
+                '''
+                INSERT INTO subscription_nodes(
+                    id, name, protocol, server, port, user_id, password, flow,
+                    security, sni, fingerprint, public_key, short_id, network,
+                    host, path, service_name, extra_json, share_link, enabled,
+                    external_key, origin_node_id, created_at_ms, updated_at_ms
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    protocol=excluded.protocol,
+                    server=excluded.server,
+                    port=excluded.port,
+                    user_id=excluded.user_id,
+                    password=excluded.password,
+                    flow=excluded.flow,
+                    security=excluded.security,
+                    sni=excluded.sni,
+                    fingerprint=excluded.fingerprint,
+                    public_key=excluded.public_key,
+                    short_id=excluded.short_id,
+                    network=excluded.network,
+                    host=excluded.host,
+                    path=excluded.path,
+                    service_name=excluded.service_name,
+                    extra_json=excluded.extra_json,
+                    share_link=excluded.share_link,
+                    enabled=excluded.enabled,
+                    external_key=excluded.external_key,
+                    origin_node_id=excluded.origin_node_id,
+                    updated_at_ms=excluded.updated_at_ms
+                ''',
+                (
+                    node_id, record['name'], record['protocol'], record['server'],
+                    record['port'], record['user_id'], record['password'], record['flow'],
+                    record['security'], record['sni'], record['fingerprint'],
+                    record['public_key'], record['short_id'], record['network'],
+                    record['host'], record['path'], record['service_name'],
+                    json.dumps(record['extra'], ensure_ascii=False, separators=(',', ':')),
+                    record['share_link'], record['enabled'], record['external_key'],
+                    record['origin_node_id'], created_at, timestamp,
+                ),
+            )
+        row = conn.execute(
+            'SELECT * FROM subscription_nodes WHERE id = ?', (node_id,)
+        ).fetchone()
+        return _node_from_row(row)
+    finally:
+        conn.close()
+
+
+def delete_subscription_node(node_id: str) -> bool:
+    if not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', node_id):
+        raise ValueError('invalid node id')
+    conn = db_connect()
+    try:
+        with conn:
+            conn.execute('DELETE FROM subscription_node_map WHERE node_id = ?', (node_id,))
+            cursor = conn.execute('DELETE FROM subscription_nodes WHERE id = ?', (node_id,))
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_subscription_nodes() -> list[dict]:
+    conn = db_connect()
+    try:
+        rows = conn.execute(
+            'SELECT * FROM subscription_nodes ORDER BY updated_at_ms DESC, name ASC'
+        ).fetchall()
+        return [_node_from_row(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def _uri_host(server: str) -> str:
+    return '[' + server + ']' if ':' in server and not server.startswith('[') else server
+
+
+def _query_truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _extra_alpn(extra: dict) -> str:
+    value = extra.get('alpn')
+    if isinstance(value, list):
+        return ','.join(str(item).strip() for item in value if str(item).strip())
+    return str(value or '').strip()
+
+
+def _node_uri(node: dict) -> str:
+    protocol = str(node.get('protocol') or '').lower()
+    if protocol == 'raw':
+        return str(node.get('share_link') or '')
+    if not protocol:
+        return ''
+    host = _uri_host(str(node.get('server') or ''))
+    port = int(node.get('port') or 0)
+    name = str(node.get('name') or protocol)
+    extra = node.get('extra') if isinstance(node.get('extra'), dict) else {}
+    security = str(node.get('security') or '')
+    network = str(node.get('network') or 'tcp')
+    sni = str(node.get('sni') or '')
+    fingerprint = str(node.get('fingerprint') or '')
+    flow = str(node.get('flow') or '')
+    fragment = '#' + quote(name, safe='')
+    if protocol == 'vless':
+        params = [('encryption', 'none'), ('security', security or 'none'), ('type', network)]
+        if sni:
+            params.append(('sni', sni))
+        if fingerprint:
+            params.append(('fp', fingerprint))
+        if flow:
+            params.append(('flow', flow))
+        if security == 'reality':
+            params.append(('pbk', str(node.get('public_key') or '')))
+            if node.get('short_id'):
+                params.append(('sid', str(node.get('short_id'))))
+        if network == 'ws':
+            params.append(('path', str(node.get('path') or '/')))
+            if node.get('host'):
+                params.append(('host', str(node['host'])))
+        elif network == 'grpc':
+            params.append(('serviceName', str(node.get('service_name') or '')))
+        alpn = _extra_alpn(extra)
+        if alpn:
+            params.append(('alpn', alpn))
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            params.append(('allowInsecure', '1'))
+        query = '&'.join(f'{quote(str(key), safe="")}={quote(str(value), safe="")}' for key, value in params)
+        return f'vless://{quote(str(node.get("user_id") or ""), safe="")}@{host}:{port}?{query}{fragment}'
+    if protocol == 'vmess':
+        payload = {
+            'v': '2',
+            'ps': name,
+            'add': str(node.get('server') or ''),
+            'port': str(port),
+            'id': str(node.get('user_id') or ''),
+            'aid': str(extra.get('alter_id') or 0),
+            'scy': str(extra.get('scy') or 'auto'),
+            'net': network,
+            'type': str(extra.get('header_type') or 'none'),
+            'host': str(node.get('host') or ''),
+            'path': str(node.get('path') or ''),
+            'tls': 'tls' if security in ('tls', 'reality') else '',
+            'sni': sni,
+            'fp': fingerprint,
+            'alpn': _extra_alpn(extra),
+        }
+        encoded = base64.b64encode(
+            json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        ).decode('ascii')
+        return 'vmess://' + encoded
+    if protocol == 'trojan':
+        params = [('security', security or 'tls'), ('type', network)]
+        if sni:
+            params.append(('sni', sni))
+        if fingerprint:
+            params.append(('fp', fingerprint))
+        if network == 'ws':
+            params.append(('path', str(node.get('path') or '/')))
+            if node.get('host'):
+                params.append(('host', str(node['host'])))
+        elif network == 'grpc':
+            params.append(('serviceName', str(node.get('service_name') or '')))
+        alpn = _extra_alpn(extra)
+        if alpn:
+            params.append(('alpn', alpn))
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            params.append(('allowInsecure', '1'))
+        query = '&'.join(f'{quote(str(key), safe="")}={quote(str(value), safe="")}' for key, value in params)
+        return f'trojan://{quote(str(node.get("password") or ""), safe="")}@{host}:{port}?{query}{fragment}'
+    if protocol == 'ss':
+        method = str(extra.get('method') or '')
+        userinfo = base64.urlsafe_b64encode(
+            (method + ':' + str(node.get('password') or '')).encode('utf-8')
+        ).decode('ascii').rstrip('=')
+        return f'ss://{userinfo}@{host}:{port}{fragment}'
+    if protocol == 'hysteria2':
+        params = []
+        if sni:
+            params.append(('sni', sni))
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            params.append(('insecure', '1'))
+        if extra.get('obfs'):
+            params.append(('obfs', str(extra['obfs'])))
+        if extra.get('obfs_password'):
+            params.append(('obfs-password', str(extra['obfs_password'])))
+        query = '&'.join(f'{quote(str(key), safe="")}={quote(str(value), safe="")}' for key, value in params)
+        return f'hysteria2://{quote(str(node.get("password") or ""), safe="")}@{host}:{port}' + (f'?{query}' if query else '') + fragment
+    if protocol == 'tuic':
+        params = [('sni', sni or str(node.get('server') or ''))]
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            params.append(('allow_insecure', '1'))
+        if extra.get('congestion_control'):
+            params.append(('congestion_control', str(extra['congestion_control'])))
+        if extra.get('udp_relay_mode'):
+            params.append(('udp_relay_mode', str(extra['udp_relay_mode'])))
+        alpn = _extra_alpn(extra)
+        if alpn:
+            params.append(('alpn', alpn))
+        query = '&'.join(f'{quote(str(key), safe="")}={quote(str(value), safe="")}' for key, value in params)
+        user = quote(str(node.get('user_id') or ''), safe='')
+        password = quote(str(node.get('password') or ''), safe='')
+        return f'tuic://{user}:{password}@{host}:{port}?{query}{fragment}'
+    if protocol == 'anytls':
+        params = [('security', 'tls')]
+        if sni:
+            params.append(('sni', sni))
+        if fingerprint:
+            params.append(('fp', fingerprint))
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            params.append(('allowInsecure', '1'))
+        alpn = _extra_alpn(extra)
+        if alpn:
+            params.append(('alpn', alpn))
+        query = '&'.join(f'{quote(str(key), safe="")}={quote(str(value), safe="")}' for key, value in params)
+        return f'anytls://{quote(str(node.get("password") or ""), safe="")}@{host}:{port}?{query}{fragment}'
+    return str(node.get('share_link') or '')
+
+
+def _unique_node_names(nodes: list[dict]) -> list[tuple[dict, str]]:
+    used: dict[str, int] = {
+        'PROXY': 1, 'DIRECT': 1, 'REJECT': 1, 'GLOBAL': 1, 'direct': 1,
+    }
+    result: list[tuple[dict, str]] = []
+    for node in nodes:
+        base = str(node.get('name') or node.get('protocol') or 'node').strip() or 'node'
+        count = used.get(base, 0) + 1
+        used[base] = count
+        name = base if count == 1 else f'{base} {count}'
+        result.append((node, name))
+    return result
+
+
+def _clash_proxy(node: dict, name: str) -> dict:
+    protocol = str(node.get('protocol') or '').lower()
+    if protocol == 'raw':
+        raise ValueError('raw 节点只能用于 base64 / links 订阅')
+    extra = node.get('extra') if isinstance(node.get('extra'), dict) else {}
+    security = str(node.get('security') or '')
+    network = str(node.get('network') or 'tcp')
+    proxy = {
+        'name': name,
+        'type': protocol,
+        'server': node['server'],
+        'port': int(node['port']),
+        'udp': True,
+    }
+    if protocol == 'ss':
+        proxy['type'] = 'ss'
+        proxy['cipher'] = str(extra.get('method') or '')
+        proxy['password'] = node['password']
+        return proxy
+    if protocol == 'vmess':
+        proxy['uuid'] = node['user_id']
+        proxy['alterId'] = int(extra.get('alter_id') or 0)
+        proxy['cipher'] = str(extra.get('scy') or 'auto')
+    elif protocol == 'vless':
+        proxy['uuid'] = node['user_id']
+        if node.get('flow'):
+            proxy['flow'] = node['flow']
+    elif protocol == 'trojan':
+        proxy['password'] = node['password']
+    elif protocol == 'hysteria2':
+        proxy['password'] = node['password']
+    elif protocol == 'tuic':
+        proxy['uuid'] = node['user_id']
+        proxy['password'] = node['password']
+        proxy['congestion-controller'] = str(extra.get('congestion_control') or 'bbr')
+        proxy['udp-relay-mode'] = str(extra.get('udp_relay_mode') or 'native')
+    elif protocol == 'anytls':
+        proxy['password'] = node['password']
+    if network and protocol in ('vless', 'vmess', 'trojan'):
+        proxy['network'] = network
+    if node.get('sni'):
+        proxy['sni'] = node['sni']
+    if node.get('fingerprint'):
+        proxy['client-fingerprint'] = node['fingerprint']
+    if security in ('tls', 'reality') and protocol in ('vless', 'vmess', 'trojan'):
+        proxy['tls'] = True
+        if node.get('sni'):
+            proxy['servername'] = node['sni']
+    if security == 'reality':
+        proxy['reality-opts'] = {
+            'public-key': node.get('public_key') or '',
+            'short-id': node.get('short_id') or '',
+        }
+    if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+        proxy['skip-cert-verify'] = True
+    alpn = _extra_alpn(extra)
+    if alpn:
+        proxy['alpn'] = [item for item in alpn.split(',') if item]
+    if network == 'ws':
+        proxy['ws-opts'] = {
+            'path': node.get('path') or '/',
+            'headers': {'Host': node['host']} if node.get('host') else {},
+        }
+    elif network == 'grpc':
+        proxy['grpc-opts'] = {'grpc-service-name': node.get('service_name') or ''}
+    elif network in ('http', 'h2'):
+        proxy['h2-opts'] = {
+            'path': node.get('path') or '/',
+            'host': [node['host']] if node.get('host') else [],
+        }
+    if protocol == 'hysteria2':
+        if extra.get('obfs'):
+            proxy['obfs'] = str(extra['obfs'])
+        if extra.get('obfs_password'):
+            proxy['obfs-password'] = str(extra['obfs_password'])
+    return proxy
+
+
+def _clash_profile(nodes: list[dict]) -> str:
+    named = _unique_node_names(nodes)
+    proxies = [_clash_proxy(node, name) for node, name in named]
+    names = [name for _, name in named]
+    profile = {
+        'mixed-port': 7890,
+        'allow-lan': False,
+        'mode': 'rule',
+        'log-level': 'info',
+        'proxies': proxies,
+        'proxy-groups': [
+            {'name': 'PROXY', 'type': 'select', 'proxies': names + ['DIRECT']},
+        ],
+        'rules': ['MATCH,PROXY'],
+    }
+    if yaml is not None:
+        return yaml.safe_dump(
+            profile, allow_unicode=True, sort_keys=False, width=1000,
+        )
+    return json.dumps(profile, ensure_ascii=False, indent=2) + '\n'
+
+
+def _singbox_transport(node: dict) -> dict | None:
+    network = str(node.get('network') or 'tcp')
+    if network == 'ws':
+        headers = {'Host': node['host']} if node.get('host') else {}
+        return {'type': 'ws', 'path': node.get('path') or '/', 'headers': headers}
+    if network == 'grpc':
+        return {'type': 'grpc', 'service_name': node.get('service_name') or ''}
+    if network in ('http', 'h2'):
+        return {
+            'type': 'http',
+            'path': node.get('path') or '/',
+            'host': [node['host']] if node.get('host') else [],
+        }
+    if network == 'quic':
+        return {'type': 'quic'}
+    return None
+
+
+def _singbox_outbound(node: dict, tag: str) -> dict:
+    protocol = str(node.get('protocol') or '').lower()
+    if protocol == 'raw':
+        raise ValueError('raw 节点只能用于 base64 / links 订阅')
+    extra = node.get('extra') if isinstance(node.get('extra'), dict) else {}
+    security = str(node.get('security') or '')
+    outbound_type = 'shadowsocks' if protocol == 'ss' else protocol
+    outbound: dict = {
+        'type': outbound_type,
+        'tag': tag,
+        'server': node['server'],
+        'server_port': int(node['port']),
+    }
+    if protocol == 'vless':
+        outbound.update({'uuid': node['user_id'], 'packet_encoding': 'xudp'})
+        if node.get('flow'):
+            outbound['flow'] = node['flow']
+    elif protocol == 'vmess':
+        outbound.update({
+            'uuid': node['user_id'],
+            'security': str(extra.get('scy') or 'auto'),
+            'alter_id': int(extra.get('alter_id') or 0),
+        })
+    elif protocol in ('trojan', 'hysteria2', 'anytls'):
+        outbound['password'] = node['password']
+    elif protocol == 'ss':
+        outbound.update({
+            'method': str(extra.get('method') or ''),
+            'password': node['password'],
+        })
+    elif protocol == 'tuic':
+        outbound.update({
+            'uuid': node['user_id'],
+            'password': node['password'],
+            'congestion_control': str(extra.get('congestion_control') or 'bbr'),
+            'udp_relay_mode': str(extra.get('udp_relay_mode') or 'native'),
+        })
+    if security in ('tls', 'reality'):
+        tls = {
+            'enabled': True,
+            'server_name': node.get('sni') or node['server'],
+        }
+        if _query_truthy(extra.get('allow_insecure') or extra.get('skip_cert_verify')):
+            tls['insecure'] = True
+        if node.get('fingerprint') and protocol in ('vless', 'trojan', 'vmess', 'anytls'):
+            tls['utls'] = {'enabled': True, 'fingerprint': node['fingerprint']}
+        if security == 'reality':
+            tls['reality'] = {
+                'enabled': True,
+                'public_key': node.get('public_key') or '',
+                'short_id': node.get('short_id') or '',
+            }
+        alpn = _extra_alpn(extra)
+        if alpn:
+            tls['alpn'] = [item for item in alpn.split(',') if item]
+        outbound['tls'] = tls
+    transport = _singbox_transport(node)
+    if transport is not None:
+        outbound['transport'] = transport
+    if protocol == 'hysteria2':
+        if extra.get('obfs'):
+            outbound['obfs'] = {
+                'type': str(extra['obfs']),
+                'password': str(extra.get('obfs_password') or ''),
+            }
+    return outbound
+
+
+def _singbox_profile(nodes: list[dict]) -> str:
+    named = _unique_node_names(nodes)
+    outbounds = [_singbox_outbound(node, name) for node, name in named]
+    outbounds.append({
+        'type': 'selector',
+        'tag': 'PROXY',
+        'outbounds': [name for _, name in named] + ['direct'],
+    })
+    outbounds.append({'type': 'direct', 'tag': 'direct'})
+    profile = {
+        'log': {'level': 'info'},
+        'inbounds': [{
+            'type': 'mixed',
+            'tag': 'mixed-in',
+            'listen': '127.0.0.1',
+            'listen_port': 2080,
+        }],
+        'outbounds': outbounds,
+        'route': {'final': 'PROXY'},
+    }
+    return json.dumps(profile, ensure_ascii=False, indent=2) + '\n'
+
+
+def _subscription_links(nodes: list[dict]) -> str:
+    return '\n'.join(_node_uri(node) for node in nodes)
+
+
+def _subscription_from_row(row: sqlite3.Row, node_ids: list[str] | None = None) -> dict:
+    result = {
+        'id': row['id'],
+        'name': row['name'],
+        'token': row['token'],
+        'short_code': row['short_code'],
+        'base_url': row['base_url'],
+        'format': row['format'],
+        'include_all': bool(row['include_all']),
+        'enabled': bool(row['enabled']),
+        'created_at_ms': int(row['created_at_ms']),
+        'updated_at_ms': int(row['updated_at_ms']),
+    }
+    if node_ids is not None:
+        result['node_ids'] = node_ids
+    long_base = row['base_url'] or SUB_BASE_URL
+    if long_base:
+        result['long_url'] = long_base.rstrip('/') + '/' + row['token']
+        result['short_url'] = long_base.rstrip('/') + '/s/' + row['short_code']
+    else:
+        result['long_url'] = ''
+        result['short_url'] = ''
+    return result
+
+
+def _node_ids_for_subscription(conn: sqlite3.Connection, subscription_id: str) -> list[str]:
+    rows = conn.execute(
+        '''SELECT node_id FROM subscription_node_map
+           WHERE subscription_id = ? ORDER BY position, rowid''',
+        (subscription_id,),
+    ).fetchall()
+    return [row['node_id'] for row in rows]
+
+
+def _normalize_subscription_format(value: object) -> str:
+    format_name = _clean_text(value, 'format', 16).lower() or 'auto'
+    if format_name == 'mihomo':
+        format_name = 'clash'
+    elif format_name == 'sing-box':
+        format_name = 'singbox'
+    elif format_name in ('xray', 'v2ray'):
+        format_name = 'base64'
+    if format_name not in ('auto', 'clash', 'singbox', 'base64', 'links'):
+        raise ValueError('unsupported subscription format')
+    return format_name
+
+
+def save_subscription(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError('subscription must be an object')
+    name = _clean_text(payload.get('name'), 'name', 120, True)
+    include_all = 1 if payload.get('include_all') else 0
+    node_ids = payload.get('node_ids') or []
+    if not isinstance(node_ids, list):
+        raise ValueError('node_ids must be an array')
+    if not include_all and not node_ids:
+        raise ValueError('node_ids must be a non-empty array')
+    normalized_ids: list[str] = []
+    seen: set[str] = set()
+    for value in node_ids[:200]:
+        node_id = _clean_text(value, 'node_id', 64)
+        if not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', node_id):
+            raise ValueError('invalid node_id')
+        if node_id not in seen:
+            normalized_ids.append(node_id)
+            seen.add(node_id)
+    if not include_all and not normalized_ids:
+        raise ValueError('node_ids must contain at least one node')
+    base_url = _safe_url(payload.get('base_url'), 'base_url')
+    format_name = _normalize_subscription_format(payload.get('format'))
+    enabled = 1 if payload.get('enabled', True) else 0
+    subscription_id = _clean_text(payload.get('id'), 'id', 64)
+    if subscription_id and not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', subscription_id):
+        raise ValueError('invalid subscription id')
+    timestamp = now_ms()
+    conn = db_connect()
+    try:
+        existing = None
+        if subscription_id:
+            existing = conn.execute(
+                'SELECT * FROM subscriptions WHERE id = ?', (subscription_id,)
+            ).fetchone()
+        if existing is None:
+            subscription_id = subscription_id or uuid.uuid4().hex
+            token = secrets.token_urlsafe(32)
+            short_code = secrets.token_urlsafe(8)
+            while conn.execute(
+                'SELECT 1 FROM subscriptions WHERE token = ? OR short_code = ?',
+                (token, short_code),
+            ).fetchone():
+                token = secrets.token_urlsafe(32)
+                short_code = secrets.token_urlsafe(8)
+            created_at = timestamp
+        else:
+            token = existing['token']
+            short_code = existing['short_code']
+            created_at = int(existing['created_at_ms'])
+        placeholders = ','.join('?' for _ in normalized_ids)
+        found = {
+            row['id'] for row in conn.execute(
+                f'SELECT id FROM subscription_nodes WHERE id IN ({placeholders})',
+                normalized_ids,
+            )
+        }
+        missing = [node_id for node_id in normalized_ids if node_id not in found]
+        if missing:
+            if include_all:
+                normalized_ids = [node_id for node_id in normalized_ids if node_id in found]
+            else:
+                raise ValueError('subscription contains unknown node ids')
+        with conn:
+            conn.execute(
+                '''INSERT INTO subscriptions(
+                       id, name, token, short_code, base_url, format, include_all, enabled,
+                       created_at_ms, updated_at_ms
+                   ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       name=excluded.name,
+                       base_url=excluded.base_url,
+                       format=excluded.format,
+                       include_all=excluded.include_all,
+                       enabled=excluded.enabled,
+                       updated_at_ms=excluded.updated_at_ms''',
+                (
+                    subscription_id, name, token, short_code, base_url,
+                    format_name, include_all, enabled, created_at, timestamp,
+                ),
+            )
+            conn.execute(
+                'DELETE FROM subscription_node_map WHERE subscription_id = ?',
+                (subscription_id,),
+            )
+            conn.executemany(
+                '''INSERT INTO subscription_node_map(subscription_id, node_id, position)
+                   VALUES(?, ?, ?)''',
+                [
+                    (subscription_id, node_id, index)
+                    for index, node_id in enumerate(normalized_ids)
+                ],
+            )
+        row = conn.execute(
+            'SELECT * FROM subscriptions WHERE id = ?', (subscription_id,)
+        ).fetchone()
+        return _subscription_from_row(row, normalized_ids)
+    finally:
+        conn.close()
+
+
+def delete_subscription(subscription_id: str) -> bool:
+    if not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', subscription_id):
+        raise ValueError('invalid subscription id')
+    conn = db_connect()
+    try:
+        with conn:
+            conn.execute(
+                'DELETE FROM subscription_node_map WHERE subscription_id = ?',
+                (subscription_id,),
+            )
+            cursor = conn.execute(
+                'DELETE FROM subscriptions WHERE id = ?',
+                (subscription_id,),
+            )
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def rotate_subscription(subscription_id: str) -> dict:
+    if not re.fullmatch(r'[A-Za-z0-9_-]{8,64}', subscription_id):
+        raise ValueError('invalid subscription id')
+    conn = db_connect()
+    try:
+        existing = conn.execute(
+            'SELECT * FROM subscriptions WHERE id = ?', (subscription_id,)
+        ).fetchone()
+        if existing is None:
+            raise ValueError('subscription not found')
+        token = secrets.token_urlsafe(32)
+        short_code = secrets.token_urlsafe(8)
+        while conn.execute(
+            'SELECT 1 FROM subscriptions WHERE id != ? AND (token = ? OR short_code = ?)',
+            (subscription_id, token, short_code),
+        ).fetchone():
+            token = secrets.token_urlsafe(32)
+            short_code = secrets.token_urlsafe(8)
+        timestamp = now_ms()
+        with conn:
+            conn.execute(
+                '''UPDATE subscriptions
+                   SET token = ?, short_code = ?, updated_at_ms = ?
+                   WHERE id = ?''',
+                (token, short_code, timestamp, subscription_id),
+            )
+        row = conn.execute(
+            'SELECT * FROM subscriptions WHERE id = ?', (subscription_id,)
+        ).fetchone()
+        return _subscription_from_row(
+            row, _node_ids_for_subscription(conn, subscription_id)
+        )
+    finally:
+        conn.close()
+
+
+def subscription_state() -> dict:
+    conn = db_connect()
+    try:
+        node_rows = conn.execute(
+            'SELECT * FROM subscription_nodes ORDER BY updated_at_ms DESC, name ASC'
+        ).fetchall()
+        nodes = [_node_from_row(row) for row in node_rows]
+        rows = conn.execute(
+            'SELECT * FROM subscriptions ORDER BY updated_at_ms DESC, name ASC'
+        ).fetchall()
+        subscriptions = [
+            _subscription_from_row(
+                row, _node_ids_for_subscription(conn, row['id'])
+            )
+            for row in rows
+        ]
+    finally:
+        conn.close()
+    return {
+        'ok': True,
+        'default_base_url': SUB_BASE_URL,
+        'formats': ['auto', 'clash', 'singbox', 'base64', 'links'],
+        'nodes': nodes,
+        'subscriptions': subscriptions,
+    }
+
+
+def _subscription_base(row: sqlite3.Row | dict, fallback: str = '') -> str:
+    if isinstance(row, sqlite3.Row):
+        stored = str(row['base_url'] or '')
+    else:
+        stored = str(row.get('base_url') or '')
+    return (stored or SUB_BASE_URL or fallback).rstrip('/')
+
+
+def _subscription_public_urls(row: sqlite3.Row | dict, fallback: str = '') -> tuple[str, str]:
+    base = _subscription_base(row, fallback)
+    if isinstance(row, sqlite3.Row):
+        token, short_code = row['token'], row['short_code']
+    else:
+        token, short_code = row['token'], row['short_code']
+    return (
+        base + '/' + token if base else '',
+        base + '/s/' + short_code if base else '',
+    )
+
+
+def _detect_subscription_format(row: sqlite3.Row, requested: str, user_agent: str) -> str:
+    fmt = _normalize_subscription_format(requested)
+    if fmt != 'auto':
+        return fmt
+    stored = _normalize_subscription_format(row['format'])
+    if stored != 'auto':
+        return stored
+    ua = (user_agent or '').lower()
+    if 'clash' in ua or 'mihomo' in ua:
+        return 'clash'
+    if 'sing-box' in ua or 'singbox' in ua or 'sfa/' in ua or 'sfa ' in ua:
+        return 'singbox'
+    return 'base64'
+
+
+def render_subscription(row: sqlite3.Row, requested_format: str, user_agent: str) -> tuple[bytes, str, str]:
+    fmt = _detect_subscription_format(row, requested_format, user_agent)
+    conn = db_connect()
+    try:
+        if row['include_all']:
+            rows = conn.execute(
+                '''SELECT * FROM subscription_nodes
+                   WHERE enabled = 1 ORDER BY updated_at_ms DESC, name ASC'''
+            ).fetchall()
+            nodes = [_node_from_row(item) for item in rows]
+        else:
+            node_ids = _node_ids_for_subscription(conn, row['id'])
+            if not node_ids:
+                raise ValueError('subscription has no nodes')
+            placeholders = ','.join('?' for _ in node_ids)
+            rows = conn.execute(
+                f'SELECT * FROM subscription_nodes WHERE id IN ({placeholders})',
+                node_ids,
+            ).fetchall()
+            by_id = {item['id']: _node_from_row(item) for item in rows}
+            nodes = [
+                by_id[node_id] for node_id in node_ids
+                if node_id in by_id and by_id[node_id].get('enabled')
+            ]
+    finally:
+        conn.close()
+    if not nodes:
+        raise ValueError('subscription has no enabled nodes')
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', '-', row['name']).strip('-') or 'subscription'
+    if fmt == 'clash':
+        return _clash_profile(nodes).encode('utf-8'), 'text/yaml; charset=utf-8', safe_name + '.yaml'
+    if fmt == 'singbox':
+        return _singbox_profile(nodes).encode('utf-8'), 'application/json; charset=utf-8', safe_name + '.json'
+    links = _subscription_links(nodes)
+    if fmt == 'links':
+        return links.encode('utf-8'), 'text/plain; charset=utf-8', safe_name + '.txt'
+    encoded = base64.b64encode(links.encode('utf-8')).decode('ascii')
+    return encoded.encode('utf-8'), 'text/plain; charset=utf-8', safe_name + '.txt'
+
+
+def _parse_share_link(link: str, index: int) -> dict:
+    original = link.strip()
+    if not original or '://' not in original:
+        raise ValueError('not a share link')
+    scheme = original.split('://', 1)[0].lower()
+    if scheme == 'vmess':
+        raw = original.split('://', 1)[1]
+        try:
+            decoded = json.loads(_decode_base64(raw))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError('invalid vmess payload') from exc
+        if not isinstance(decoded, dict):
+            raise ValueError('invalid vmess payload')
+        server = _safe_server(decoded.get('add'))
+        port = _safe_port(decoded.get('port'))
+        name = str(decoded.get('ps') or f'VMESS · {server}').strip()
+        return {
+            'name': name,
+            'protocol': 'vmess',
+            'server': server,
+            'port': port,
+            'user_id': str(decoded.get('id') or ''),
+            'network': str(decoded.get('net') or 'tcp'),
+            'host': str(decoded.get('host') or ''),
+            'path': str(decoded.get('path') or ''),
+            'sni': str(decoded.get('sni') or ''),
+            'security': 'tls' if str(decoded.get('tls') or '').lower() in ('tls', 'reality') else 'none',
+            'share_link': original,
+            'external_key': 'link:' + hashlib.sha256(original.encode('utf-8')).hexdigest()[:32],
+            'extra': {
+                'alter_id': decoded.get('aid') or 0,
+                'scy': decoded.get('scy') or 'auto',
+                'header_type': decoded.get('type') or 'none',
+                'alpn': decoded.get('alpn') or '',
+            },
+        }
+    parsed = urlsplit(original)
+    if not parsed.hostname:
+        raise ValueError('share link has no server')
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError('share link has an invalid port') from exc
+    if port is None:
+        port = 443
+    q = {
+        key: values[0]
+        for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+    }
+    name = unquote(parsed.fragment or '') or f'{scheme.upper()} · {parsed.hostname}'
+    common = {
+        'name': name,
+        'server': parsed.hostname,
+        'port': port,
+        'network': q.get('type') or q.get('net') or 'tcp',
+        'host': q.get('host') or '',
+        'path': q.get('path') or '',
+        'service_name': q.get('serviceName') or q.get('service_name') or '',
+        'sni': q.get('sni') or q.get('peer') or '',
+        'fingerprint': q.get('fp') or q.get('fingerprint') or '',
+        'flow': q.get('flow') or '',
+        'security': (q.get('security') or q.get('tls') or '').lower(),
+        'share_link': original,
+        'external_key': 'link:' + hashlib.sha256(original.encode('utf-8')).hexdigest()[:32],
+        'extra': {
+            'allow_insecure': _query_truthy(q.get('allowInsecure') or q.get('insecure')),
+            'alpn': q.get('alpn') or '',
+        },
+    }
+    if scheme == 'vless':
+        common.update({
+            'protocol': 'vless',
+            'user_id': unquote(parsed.username or ''),
+            'security': common['security'] or ('reality' if q.get('pbk') else 'tls'),
+            'public_key': q.get('pbk') or '',
+            'short_id': q.get('sid') or '',
+        })
+    elif scheme == 'trojan':
+        common.update({
+            'protocol': 'trojan',
+            'password': unquote(parsed.username or ''),
+            'security': common['security'] or 'tls',
+        })
+    elif scheme in ('hysteria2', 'hy2'):
+        common.update({
+            'protocol': 'hysteria2',
+            'password': unquote(parsed.password or parsed.username or ''),
+            'security': 'tls',
+            'extra': {
+                'allow_insecure': _query_truthy(q.get('insecure') or q.get('allowInsecure')),
+                'obfs': q.get('obfs') or '',
+                'obfs_password': q.get('obfs-password') or '',
+                'alpn': q.get('alpn') or '',
+            },
+        })
+    elif scheme == 'tuic':
+        common.update({
+            'protocol': 'tuic',
+            'user_id': unquote(parsed.username or ''),
+            'password': unquote(parsed.password or ''),
+            'security': 'tls',
+            'extra': {
+                'allow_insecure': _query_truthy(q.get('allow_insecure') or q.get('allowInsecure')),
+                'congestion_control': q.get('congestion_control') or 'bbr',
+                'udp_relay_mode': q.get('udp_relay_mode') or 'native',
+                'alpn': q.get('alpn') or '',
+            },
+        })
+    elif scheme == 'anytls':
+        common.update({
+            'protocol': 'anytls',
+            'password': unquote(parsed.username or ''),
+            'security': 'tls',
+        })
+    elif scheme == 'ss':
+        body = original[5:].split('#', 1)[0]
+        if '@' in body:
+            userinfo, hostport = body.rsplit('@', 1)
+            decoded = _decode_base64(userinfo) if ':' not in userinfo else unquote(userinfo)
+            hostport_url = urlsplit('ss://' + hostport)
+            if not hostport_url.hostname:
+                raise ValueError('invalid ss server')
+            common['server'] = hostport_url.hostname
+            common['port'] = _safe_port(hostport_url.port or 8388)
+        else:
+            decoded = _decode_base64(body)
+        if ':' not in decoded:
+            raise ValueError('invalid ss credentials')
+        method, password = decoded.split(':', 1)
+        common.update({
+            'protocol': 'ss',
+            'password': password,
+            'security': 'none',
+            'network': '',
+            'extra': {'method': method},
+        })
+    else:
+        common.update({
+            'protocol': 'raw',
+            'security': 'none',
+            'network': '',
+        })
+    common['name'] = common['name'].strip() or f'{scheme.upper()} · {common["server"]}'
+    return common
+
+
+def import_subscription_links(text: object) -> dict:
+    if not isinstance(text, str):
+        raise ValueError('links must be text')
+    lines = [
+        line.strip() for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith('#')
+    ]
+    if not lines:
+        raise ValueError('no share links found')
+    if len(lines) > 300:
+        raise ValueError('too many share links')
+    nodes = []
+    errors = []
+    for index, line in enumerate(lines, start=1):
+        try:
+            nodes.append(save_subscription_node(_parse_share_link(line, index)))
+        except ValueError as exc:
+            errors.append({'line': index, 'error': str(exc)})
+    return {'ok': True, 'imported': len(nodes), 'nodes': nodes, 'errors': errors}
+
+
+def _rule_document(content: object) -> dict:
+    if not isinstance(content, str):
+        raise ValueError('content must be text')
+    if len(content.encode('utf-8')) > 4 * 1024 * 1024:
+        raise ValueError('content is too large')
+    if yaml is None:
+        raise ValueError('PyYAML is not installed')
+    try:
+        document = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise ValueError('YAML 语法错误: ' + str(exc)) from exc
+    if not isinstance(document, dict):
+        raise ValueError('YAML 根节点必须是对象')
+    rules = document.get('rules')
+    if not isinstance(rules, list):
+        raise ValueError('YAML 必须包含 rules 数组')
+    invalid = [
+        index for index, rule in enumerate(rules)
+        if not isinstance(rule, str) or not rule.strip()
+    ]
+    if invalid:
+        raise ValueError(
+            'rules 第 ' + str(invalid[0] + 1) + ' 项必须是字符串'
+        )
+    for index, rule in enumerate(rules):
+        if (
+            rule.split(',', 1)[0].strip().upper() in ('MATCH', 'FINAL') and
+            index != len(rules) - 1
+        ):
+            raise ValueError('MATCH/FINAL 必须是最后一条规则')
+    return document
+
+
+def _rule_groups(document: dict) -> list[str]:
+    groups = []
+    seen = set()
+    for item in document.get('proxy-groups') or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '').strip()
+        if name and name not in seen:
+            groups.append(name)
+            seen.add(name)
+    return groups
+
+
+def _rule_providers(document: dict) -> list[str]:
+    raw = document.get('rule-providers')
+    if not isinstance(raw, dict):
+        return []
+    return sorted(str(name) for name in raw)
+
+
+def _rule_metadata(path: Path, content: str) -> dict:
+    stat = path.stat()
+    token = path.parent.name
+    metadata = {
+        'id': hashlib.sha256(str(path).encode('utf-8')).hexdigest()[:16],
+        'label': '订阅规则',
+        'path': str(path),
+        'token_preview': (
+            token[:8] + '…' + token[-6:]
+            if len(token) > 16 else token
+        ),
+        'url': (
+            RULE_PUBLIC_BASE + '/' + token + '/mihomo.yaml'
+            if RULE_PUBLIC_BASE and re.fullmatch(r'[A-Fa-f0-9]{64}', token)
+            else ''
+        ),
+        'size': stat.st_size,
+        'mtime_ms': int(stat.st_mtime * 1000),
+        'sha256': hashlib.sha256(content.encode('utf-8')).hexdigest(),
+        'mode': '',
+        'proxy_count': 0,
+        'rule_count': 0,
+        'group_count': 0,
+        'provider_count': 0,
+        'group_names': [],
+        'provider_names': [],
+        'rule_types': {},
+    }
+    try:
+        document = _rule_document(content)
+    except ValueError as exc:
+        metadata['yaml_error'] = str(exc)
+        return metadata
+    proxies = document.get('proxies')
+    proxy_count = len(proxies) if isinstance(proxies, list) else 0
+    groups = _rule_groups(document)
+    providers = _rule_providers(document)
+    rules = document['rules']
+    rule_types: dict[str, int] = {}
+    for rule in rules:
+        rule_type = rule.split(',', 1)[0].strip().upper()
+        rule_types[rule_type] = rule_types.get(rule_type, 0) + 1
+    metadata.update({
+        'label': (
+            '共享订阅 · 单节点' if proxy_count == 1 else
+            '自用订阅 · 多节点' if proxy_count > 1 else '订阅规则'
+        ),
+        'mode': str(document.get('mode') or ''),
+        'proxy_count': proxy_count,
+        'rule_count': len(rules),
+        'group_count': len(groups),
+        'provider_count': len(providers),
+        'group_names': groups[:100],
+        'provider_names': providers[:100],
+        'rule_types': rule_types,
+    })
+    return metadata
+
+
+def discover_rule_files() -> dict:
+    if not RULE_DIR.is_dir():
+        return {
+            'ok': True,
+            'root': str(RULE_DIR),
+            'public_base': RULE_PUBLIC_BASE,
+            'files': [],
+            'error': '规则目录不存在',
+        }
+    files = []
+    errors = []
+    for path in sorted(RULE_DIR.glob('*/mihomo.yaml')):
+        try:
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            if stat.st_size > 4 * 1024 * 1024:
+                errors.append({'path': str(path), 'error': '文件超过 4 MiB'})
+                continue
+            content = path.read_text(encoding='utf-8')
+            files.append(_rule_metadata(path, content))
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append({'path': str(path), 'error': str(exc)})
+    files.sort(
+        key=lambda item: (
+            -int(item.get('proxy_count') or 0),
+            str(item.get('label') or ''),
+            str(item.get('path') or ''),
+        )
+    )
+    result = {
+        'ok': True,
+        'root': str(RULE_DIR),
+        'public_base': RULE_PUBLIC_BASE,
+        'files': files,
+    }
+    if errors:
+        result['errors'] = errors
+    return result
+
+
+def _rule_file_metadata(file_id: str) -> dict:
+    if not re.fullmatch(r'[A-Fa-f0-9]{16}', file_id):
+        raise ValueError('invalid rule file id')
+    for item in discover_rule_files()['files']:
+        if item['id'] == file_id:
+            return item
+    raise ValueError('rule file not found')
+
+
+def read_rule_file(file_id: str) -> dict:
+    metadata = _rule_file_metadata(file_id)
+    path = Path(metadata['path'])
+    try:
+        content = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError('读取规则文件失败: ' + str(exc)) from exc
+    result = {
+        'ok': True,
+        'file': metadata,
+        'content': content,
+        'rules': [],
+        'groups': [],
+        'providers': [],
+        'proxy_count': 0,
+    }
+    try:
+        document = _rule_document(content)
+    except ValueError as exc:
+        result['yaml_error'] = str(exc)
+        return result
+    result.update({
+        'mode': str(document.get('mode') or ''),
+        'rules': document['rules'],
+        'groups': _rule_groups(document),
+        'providers': _rule_providers(document),
+        'proxy_count': len(document.get('proxies') or []),
+    })
+    return result
+
+
+def validate_rule_content(content: object) -> dict:
+    document = _rule_document(content)
+    rules = document['rules']
+    return {
+        'ok': True,
+        'mode': str(document.get('mode') or ''),
+        'rules': rules,
+        'groups': _rule_groups(document),
+        'providers': _rule_providers(document),
+        'proxy_count': len(document.get('proxies') or []),
+        'rule_count': len(rules),
+    }
+
+
+def prepare_rule_save(file_id: str, content: object) -> dict:
+    metadata = _rule_file_metadata(file_id)
+    validated = validate_rule_content(content)
+    return {
+        **validated,
+        'file': metadata,
+        'file_id': file_id,
+        'path': metadata['path'],
+        'sha256': hashlib.sha256(
+            str(content).encode('utf-8')
+        ).hexdigest(),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version = 'ProxyTrafficAggregate/1.0'
+    server_version = 'ProxyTrafficAggregate/2.2.2'
     sys_version = ''
 
     def log_message(self, fmt: str, *args: object) -> None:
-        log.info('%s - %s', self.client_address[0], fmt % args)
+        message = fmt % args
+        message = re.sub(
+            r'/sub/[A-Za-z0-9_-]{16,128}',
+            '/sub/<redacted>',
+            message,
+        )
+        message = re.sub(
+            r'/s/[A-Za-z0-9_-]{4,32}',
+            '/s/<redacted>',
+            message,
+        )
+        message = re.sub(
+            r'/proxy-traffic-sub/(?:s/)?[A-Za-z0-9_-]{4,128}',
+            '/proxy-traffic-sub/<redacted>',
+            message,
+        )
+        log.info('%s - %s', self.client_address[0], message)
 
     def send_json(self, status: int, payload: object) -> None:
         body = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
@@ -1300,12 +2802,150 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
-        self.wfile.write(body)
+        if not getattr(self, '_head_only', False):
+            self.wfile.write(body)
+
+    def require_local(self) -> bool:
+        try:
+            address = ipaddress.ip_address(self.client_address[0])
+        except ValueError:
+            address = None
+        if address is None or not (address.is_private or address.is_loopback):
+            self.send_json(403, {'error': 'local access only'})
+            return False
+        return True
+
+    def send_subscription(
+        self,
+        body: bytes,
+        content_type: str,
+        filename: str,
+    ) -> None:
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Robots-Tag', 'noindex, nofollow')
+        self.end_headers()
+        if not getattr(self, '_head_only', False):
+            self.wfile.write(body)
+
+    def send_redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header('Location', location)
+        self.send_header('Content-Length', '0')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Robots-Tag', 'noindex, nofollow')
+        self.end_headers()
+
+    def read_json_body(self, maximum: int = 1024 * 1024) -> object:
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError as exc:
+            raise ValueError('invalid content length') from exc
+        if length <= 0 or length > maximum:
+            raise ValueError('invalid body size')
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError('invalid json') from exc
+
+    def request_base(self) -> str:
+        host = self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or ''
+        proto = self.headers.get('X-Forwarded-Proto') or 'http'
+        if not host:
+            return ''
+        return proto.split(',', 1)[0].strip() + '://' + host.split(',', 1)[0].strip() + '/sub'
+
+    def do_HEAD(self) -> None:
+        self._head_only = True
+        self.do_GET()
 
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/proxy-traffic/sub/state':
+                if not self.require_local():
+                    return
+                self.send_json(200, subscription_state())
+                return
+            if parsed.path in (
+                '/api/proxy-traffic/rules',
+                '/api/proxy-traffic/rules/state',
+            ):
+                if not self.require_local():
+                    return
+                self.send_json(200, discover_rule_files())
+                return
+            if parsed.path == '/api/proxy-traffic/rules/file':
+                if not self.require_local():
+                    return
+                file_id = (query.get('file_id') or [''])[0].strip()
+                self.send_json(200, read_rule_file(file_id))
+                return
+            segments = [unquote(segment) for segment in parsed.path.split('/') if segment]
+            if segments and segments[0] == 'proxy-traffic-sub':
+                segments = ['sub'] + segments[1:]
+            if (
+                (len(segments) == 2 and segments[0] == 's') or
+                (len(segments) == 3 and segments[:2] == ['sub', 's'])
+            ):
+                code = segments[-1]
+                if not SUB_CODE_RE.fullmatch(code):
+                    self.send_json(404, {'error': 'subscription not found'})
+                    return
+                conn = db_connect()
+                try:
+                    row = conn.execute(
+                        'SELECT * FROM subscriptions WHERE short_code = ? AND enabled = 1',
+                        (code,),
+                    ).fetchone()
+                finally:
+                    conn.close()
+                if row is None:
+                    self.send_json(404, {'error': 'subscription not found'})
+                    return
+                long_url, _ = _subscription_public_urls(row, self.request_base())
+                if not long_url:
+                    self.send_json(404, {'error': 'subscription base URL is not configured'})
+                    return
+                requested = (
+                    (query.get('format') or query.get('target') or ['auto'])[0]
+                )
+                normalized = _normalize_subscription_format(requested)
+                if normalized != 'auto':
+                    long_url += '?format=' + quote(normalized, safe='')
+                self.send_redirect(long_url)
+                return
+            if len(segments) in (2, 3) and segments[0] == 'sub':
+                token = segments[1]
+                if not SUB_TOKEN_RE.fullmatch(token):
+                    self.send_json(404, {'error': 'subscription not found'})
+                    return
+                conn = db_connect()
+                try:
+                    row = conn.execute(
+                        'SELECT * FROM subscriptions WHERE token = ? AND enabled = 1',
+                        (token,),
+                    ).fetchone()
+                finally:
+                    conn.close()
+                if row is None:
+                    self.send_json(404, {'error': 'subscription not found'})
+                    return
+                requested = (
+                    segments[2] if len(segments) == 3 else
+                    (query.get('format') or query.get('target') or ['auto'])[0]
+                )
+                user_agent = self.headers.get('User-Agent', '')
+                body, content_type, filename = render_subscription(
+                    row, requested, user_agent,
+                )
+                self.send_subscription(body, content_type, filename)
+                return
             if parsed.path in HEALTH_PATHS:
                 self.send_json(200, health())
                 return
@@ -1359,41 +2999,120 @@ class Handler(BaseHTTPRequestHandler):
         except sqlite3.Error:
             log.exception('query failed')
             self.send_json(500, {'error': 'database error'})
+        except Exception:
+            log.exception('query failed')
+            self.send_json(500, {'error': 'internal error'})
 
     def do_POST(self) -> None:
         parsed = urlsplit(self.path)
-        if parsed.path not in INGEST_PATHS:
-            self.send_json(404, {'error': 'not found'})
+        if parsed.path in INGEST_PATHS:
+            authorization = self.headers.get('Authorization', '')
+            supplied = authorization[7:].strip() if authorization.lower().startswith('bearer ') else ''
+            if not supplied or not hmac.compare_digest(supplied, INGEST_TOKEN):
+                self.send_json(401, {'error': 'unauthorized'})
+                return
+            try:
+                payload = self.read_json_body(MAX_BODY_BYTES)
+                accepted = ingest_rows(payload)
+            except ValueError as exc:
+                self.send_json(400, {'error': str(exc)})
+                return
+            except sqlite3.Error:
+                log.exception('ingest failed')
+                self.send_json(500, {'error': 'database error'})
+                return
+            self.send_json(200, {'ok': True, 'accepted': accepted})
+            log.info('ingested %d rows', accepted)
             return
-        authorization = self.headers.get('Authorization', '')
-        supplied = authorization[7:].strip() if authorization.lower().startswith('bearer ') else ''
-        if not supplied or not hmac.compare_digest(supplied, INGEST_TOKEN):
-            self.send_json(401, {'error': 'unauthorized'})
+        if parsed.path.startswith('/api/proxy-traffic/rules/'):
+            if not self.require_local():
+                return
+            try:
+                payload = self.read_json_body(4 * 1024 * 1024)
+                if parsed.path == '/api/proxy-traffic/rules/parse':
+                    self.send_json(
+                        200,
+                        validate_rule_content(
+                            payload.get('content') if isinstance(payload, dict) else None
+                        ),
+                    )
+                    return
+                if parsed.path == '/api/proxy-traffic/rules/prepare':
+                    file_id = _clean_text(
+                        payload.get('file_id') if isinstance(payload, dict) else '',
+                        'file_id',
+                        16,
+                        True,
+                    )
+                    content = (
+                        payload.get('content') if isinstance(payload, dict) else None
+                    )
+                    self.send_json(200, prepare_rule_save(file_id, content))
+                    return
+                self.send_json(404, {'error': 'not found'})
+            except ValueError as exc:
+                self.send_json(400, {'error': str(exc)})
+            except Exception:
+                log.exception('rule operation failed')
+                self.send_json(500, {'error': 'internal error'})
             return
-        try:
-            length = int(self.headers.get('Content-Length', '0'))
-        except ValueError:
-            self.send_json(400, {'error': 'invalid content length'})
+        if parsed.path.startswith('/api/proxy-traffic/sub/'):
+            if not self.require_local():
+                return
+            try:
+                payload = self.read_json_body()
+                if parsed.path == '/api/proxy-traffic/sub/nodes':
+                    node = save_subscription_node(payload)
+                    self.send_json(200, {'ok': True, 'node': node})
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/nodes/delete':
+                    node_id = _clean_text(
+                        payload.get('id') if isinstance(payload, dict) else '',
+                        'id',
+                        64,
+                        True,
+                    )
+                    removed = delete_subscription_node(node_id)
+                    self.send_json(200, {'ok': True, 'removed': removed})
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/nodes/import':
+                    result = import_subscription_links(
+                        payload.get('links') if isinstance(payload, dict) else None
+                    )
+                    self.send_json(200, result)
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/subscriptions':
+                    subscription = save_subscription(payload)
+                    self.send_json(200, {'ok': True, 'subscription': subscription})
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/subscriptions/delete':
+                    subscription_id = _clean_text(
+                        payload.get('id') if isinstance(payload, dict) else '',
+                        'id',
+                        64,
+                        True,
+                    )
+                    removed = delete_subscription(subscription_id)
+                    self.send_json(200, {'ok': True, 'removed': removed})
+                    return
+                if parsed.path == '/api/proxy-traffic/sub/subscriptions/rotate':
+                    subscription_id = _clean_text(
+                        payload.get('id') if isinstance(payload, dict) else '',
+                        'id',
+                        64,
+                        True,
+                    )
+                    subscription = rotate_subscription(subscription_id)
+                    self.send_json(200, {'ok': True, 'subscription': subscription})
+                    return
+                self.send_json(404, {'error': 'not found'})
+            except ValueError as exc:
+                self.send_json(400, {'error': str(exc)})
+            except sqlite3.Error:
+                log.exception('subscription operation failed')
+                self.send_json(500, {'error': 'database error'})
             return
-        if length <= 0 or length > MAX_BODY_BYTES:
-            self.send_json(413, {'error': 'invalid body size'})
-            return
-        raw = self.rfile.read(length)
-        try:
-            payload = json.loads(raw)
-            accepted = ingest_rows(payload)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            self.send_json(400, {'error': 'invalid json'})
-            return
-        except ValueError as exc:
-            self.send_json(400, {'error': str(exc)})
-            return
-        except sqlite3.Error:
-            log.exception('ingest failed')
-            self.send_json(500, {'error': 'database error'})
-            return
-        self.send_json(200, {'ok': True, 'accepted': accepted})
-        log.info('ingested %d rows', accepted)
+        self.send_json(404, {'error': 'not found'})
 
 
 def main() -> None:

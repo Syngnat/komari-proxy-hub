@@ -1,5 +1,6 @@
 # 放在 Komari 站点的 server {} 内。只暴露 ingest 路径，
 # 查询接口由 Komari 插件在管理员会话内反向代理。
+# 独立订阅域名示例见 nginx-subscription.conf.example。
 location = /api/proxy-traffic/ingest {
     client_max_body_size 8m;
     proxy_pass http://172.17.0.1:9460/ingest;

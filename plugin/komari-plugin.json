@@ -5,18 +5,19 @@
   },
   "short": "proxy-traffic",
   "description": {
-    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；内置 sing-box VLESS Reality 节点创建向导。",
-    "en": "Aggregates proxy traffic by source IP, with exact Clash API statistics, Xray access-log fallback, and a built-in sing-box VLESS Reality provisioning wizard."
+    "zh_CN": "按来源 IP 汇总代理流量。Clash API 内核统计精确流量，Xray access log 降级统计连接次数；支持 sing-box / Xray 节点创建、订阅节点库、长短链订阅和分流规则可视化编辑。",
+    "en": "Aggregates proxy traffic by source IP, with Clash API and Xray access-log modes, node provisioning, subscriptions, and a visual YAML rule editor."
   },
   "author": "Syngnat",
-  "version": "2.1.1",
+  "version": "2.2.2",
   "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",
   "permissions": {
     "allowRoutes": true,
     "allowSystemRPC": true,
-    "timeout": 30
+    "timeout": 30,
+    "maxHTTPBodyBytes": 2097152
   },
   "pages": [
     {
@@ -31,8 +32,26 @@
     {
       "file": "pages/provision.html",
       "title": {
-        "zh_CN": "创建 sing-box 节点",
-        "en": "Create sing-box node"
+        "zh_CN": "创建代理节点",
+        "en": "Create proxy node"
+      },
+      "type": "iframe",
+      "visibility": "admin"
+    },
+    {
+      "file": "pages/subscriptions.html",
+      "title": {
+        "zh_CN": "订阅管理",
+        "en": "Subscriptions"
+      },
+      "type": "iframe",
+      "visibility": "admin"
+    },
+    {
+      "file": "pages/rules.html",
+      "title": {
+        "zh_CN": "分流规则",
+        "en": "Routing rules"
       },
       "type": "iframe",
       "visibility": "admin"

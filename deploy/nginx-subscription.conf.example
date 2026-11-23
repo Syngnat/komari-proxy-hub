@@ -1,0 +1,21 @@
+# 独立订阅域名示例。
+# 只反代 /sub/ 前缀，长链是 /sub/<token>，短链是 /sub/s/<code>。
+# 不要反代 /api/，否则会把订阅管理接口暴露到公网。
+server {
+    listen 443 ssl http2;
+    server_name sub.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/sub.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sub.example.com/privkey.pem;
+
+    location ^~ /sub/ {
+        proxy_pass http://172.17.0.1:9460;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 20s;
+        proxy_buffering off;
+    }
+}

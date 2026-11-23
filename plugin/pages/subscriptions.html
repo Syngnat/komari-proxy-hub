@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>订阅管理</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f7;
+      --panel: #fff;
+      --text: #16202b;
+      --muted: #687786;
+      --line: rgba(20, 35, 50, .12);
+      --accent: #2867e8;
+      --danger: #c03b46;
+      --ok: #138a72;
+      --soft: rgba(40, 103, 232, .08);
+      --radius: 16px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10161d;
+        --panel: #182029;
+        --text: #edf3f8;
+        --muted: #93a0ad;
+        --line: rgba(235, 243, 250, .14);
+        --accent: #79a7ff;
+        --danger: #ff8c95;
+        --ok: #48c9ae;
+        --soft: rgba(121, 167, 255, .1);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.5;
+    }
+    .shell { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 8px 0 6px; font-size: 30px; letter-spacing: -.03em; }
+    h2 { margin: 0; font-size: 18px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+    .panel {
+      margin-bottom: 18px; padding: 20px; border: 1px solid var(--line);
+      border-radius: var(--radius); background: var(--panel);
+      box-shadow: 0 14px 42px rgba(20, 35, 50, .06);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    label { color: var(--muted); font-size: 12px; }
+    input, select, textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px;
+      background: transparent; color: var(--text); font: inherit;
+    }
+    textarea { min-height: 120px; resize: vertical; font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+    input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+    button {
+      border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px;
+      background: transparent; color: var(--text); cursor: pointer; font: inherit;
+    }
+    button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    button.danger { color: var(--danger); }
+    button.small { padding: 5px 9px; font-size: 12px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .status { min-height: 22px; margin-top: 10px; color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--ok); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .node-list { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .node-card {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px;
+      border: 1px solid var(--line); border-radius: 11px; background: var(--soft);
+    }
+    .node-card-main { flex: 1; min-width: 0; }
+    .node-title { font-weight: 650; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .node-meta { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .badge {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
+    }
+    .badge.accent { color: var(--accent); border-color: rgba(40, 103, 232, .35); }
+    .subscription-card { padding: 14px; border: 1px solid var(--line); border-radius: 12px; margin-top: 10px; }
+    .subscription-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .link-row { display: flex; gap: 8px; margin-top: 8px; }
+    .link-row input { font: 12px "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
+    .empty { padding: 16px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+    details.import-box { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+    details.import-box summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+    details.import-box .field { margin-top: 12px; }
+    .base-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+    code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .grid, .node-list { grid-template-columns: 1fr; }
+      .panel-head { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="eyebrow">PROXY TRAFFIC · SUBSCRIPTIONS</div>
+    <h1>订阅管理</h1>
+    <p class="subtitle">一个订阅可以选多个节点。自用订阅可选全部节点，付费订阅只勾选指定节点；同一个节点可以同时出现在多个订阅里。</p>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>订阅节点库</h2>
+          <div class="hint">创建节点成功后会自动写入；也可以在这里粘贴任意分享链接导入。</div>
+        </div>
+        <button id="refresh" type="button">刷新</button>
+      </div>
+      <div id="nodeList" class="node-list"></div>
+      <details class="import-box">
+        <summary>导入分享链接</summary>
+        <div class="field">
+          <label for="importLinks">每行一个链接，支持 VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC、AnyTLS；其他协议保留为 base64 订阅</label>
+          <textarea id="importLinks" placeholder="vless://...&#10;trojan://..."></textarea>
+        </div>
+        <div class="actions">
+          <button id="importButton" class="primary" type="button">导入节点</button>
+          <button id="clearImport" type="button">清空</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 id="editorTitle">创建订阅</h2>
+          <div class="hint">长短链都使用同一个订阅，短链只做 302 跳转，不会额外暴露节点内容。</div>
+        </div>
+        <div class="base-presets">
+          <span id="selectedCount" class="badge accent">已选 0 个节点</span>
+          <button id="selectAll" class="small" type="button">全选节点</button>
+          <button id="clearSelection" class="small" type="button">清空</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label for="name">订阅名称</label>
+          <input id="name" maxlength="120" placeholder="例如：自用 / 付费用户">
+        </div>
+        <div class="field">
+          <label for="format">默认客户端格式</label>
+          <select id="format">
+            <option value="auto">自动识别 User-Agent</option>
+            <option value="clash">mihomo / Clash</option>
+            <option value="singbox">sing-box</option>
+            <option value="base64">Xray / v2rayN（base64 链接）</option>
+            <option value="links">明文链接</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label for="baseUrl">订阅基址</label>
+          <input id="baseUrl" placeholder="https://komari.example.com/proxy-traffic-sub">
+          <div class="base-presets">
+            <button id="komariBase" class="small" type="button">使用 Komari 域名</button>
+            <span class="hint">独立域名填 <code>https://sub.example.com/sub</code>，Nginx 将该前缀反代到 <code>127.0.0.1:9460</code>。</span>
+          </div>
+        </div>
+        <div class="field full">
+          <label>选择节点</label>
+          <div class="hint">在上方“订阅节点库”里勾选，节点顺序按勾选顺序写入订阅。</div>
+          <label class="check" style="color:var(--text)">
+            <input id="includeAll" type="checkbox">
+            包含全部节点（以后新增的节点会自动加入，适合自用订阅）
+          </label>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="save" class="primary" type="button">创建订阅</button>
+        <button id="cancelEdit" type="button" hidden>取消编辑</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>已有订阅</h2>
+          <div class="hint">令牌泄露时直接轮换；旧长链和短链会立即失效。</div>
+        </div>
+      </div>
+      <div id="subscriptionList"></div>
+    </section>
+  </main>
+
+  <script>
+    const el = Object.fromEntries([
+      "refresh", "nodeList", "importLinks", "importButton", "clearImport",
+      "editorTitle", "selectedCount", "name", "format", "baseUrl", "komariBase",
+      "selectAll", "clearSelection", "includeAll", "save", "cancelEdit", "status", "subscriptionList",
+    ].map((id) => [id, document.getElementById(id)]));
+
+    let state = { nodes: [], subscriptions: [] };
+    let editingId = "";
+
+    function setStatus(message, kind) {
+      el.status.textContent = message || "";
+      el.status.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function defaultBase() {
+      return window.location.origin + "/proxy-traffic-sub";
+    }
+
+    function formatLabel(value) {
+      return {
+        auto: "自动", clash: "mihomo", singbox: "sing-box",
+        base64: "Xray / v2rayN", links: "明文链接",
+      }[value] || value;
+    }
+
+    function protocolLabel(value) {
+      return String(value || "").toUpperCase();
+    }
+
+    function selectedIds() {
+      return Array.from(document.querySelectorAll("input[data-node-id]:checked"))
+        .map((input) => input.getAttribute("data-node-id"))
+        .filter(Boolean);
+    }
+
+    function updateSelectedCount() {
+      el.selectedCount.textContent = el.includeAll.checked
+        ? "全部节点"
+        : "已选 " + selectedIds().length + " 个节点";
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, {
+        cache: "no-store",
+        ...(options || {}),
+        headers: {
+          Accept: "application/json",
+          ...(options && options.headers ? options.headers : {}),
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "请求失败");
+      return payload;
+    }
+
+    function nodeMap() {
+      return new Map(state.nodes.map((node) => [node.id, node]));
+    }
+
+    function renderNodes() {
+      el.nodeList.replaceChildren();
+      if (!state.nodes.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "节点库还是空的。先在“创建代理节点”里创建，或粘贴分享链接导入。";
+        el.nodeList.appendChild(empty);
+        updateSelectedCount();
+        return;
+      }
+      for (const node of state.nodes) {
+        const card = document.createElement("label");
+        card.className = "node-card";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.setAttribute("data-node-id", node.id);
+        checkbox.addEventListener("change", updateSelectedCount);
+        card.appendChild(checkbox);
+        const main = document.createElement("div");
+        main.className = "node-card-main";
+        const title = document.createElement("div");
+        title.className = "node-title";
+        title.textContent = node.name;
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = protocolLabel(node.protocol);
+        title.appendChild(badge);
+        const meta = document.createElement("div");
+        meta.className = "node-meta";
+        meta.textContent = node.server + ":" + node.port +
+          (node.security ? " · " + node.security : "") +
+          (node.enabled ? "" : " · 已停用");
+        main.appendChild(title);
+        main.appendChild(meta);
+        card.appendChild(main);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "small danger";
+        remove.textContent = "删除";
+        remove.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!confirm("从节点库删除“" + node.name + "”？订阅里也会移除该节点。")) return;
+          try {
+            await api("/api/proxy-traffic/sub/nodes/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: node.id }),
+            });
+            await loadState();
+            setStatus("节点已删除。", "ok");
+          } catch (error) {
+            setStatus("删除节点失败：" + error.message, "error");
+          }
+        });
+        card.appendChild(remove);
+        el.nodeList.appendChild(card);
+      }
+      updateSelectedCount();
+    }
+
+    function subscriptionLink(subscription, short) {
+      const base = (el.baseUrl.value || subscription.base_url || defaultBase()).replace(/\/+$/, "");
+      if (short) {
+        return subscription.short_url || (base + "/s/" + subscription.short_code);
+      }
+      return subscription.long_url || (base + "/" + subscription.token);
+    }
+
+    function makeLinkRow(label, value) {
+      const row = document.createElement("div");
+      row.className = "link-row";
+      const input = document.createElement("input");
+      input.readOnly = true;
+      input.value = value;
+      input.setAttribute("aria-label", label);
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "small";
+      copy.textContent = "复制";
+      copy.addEventListener("click", async () => {
+        copy.textContent = await copyText(value) ? "已复制" : "复制失败";
+        setTimeout(() => { copy.textContent = "复制"; }, 1200);
+      });
+      row.appendChild(input);
+      row.appendChild(copy);
+      return row;
+    }
+
+    async function copyText(value) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch (_) {
+        const area = document.createElement("textarea");
+        area.value = value;
+        document.body.appendChild(area);
+        area.select();
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch (_) {}
+        area.remove();
+        return ok;
+      }
+    }
+
+    function renderSubscriptions() {
+      el.subscriptionList.replaceChildren();
+      if (!state.subscriptions.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "还没有订阅。勾选节点并创建一个。";
+        el.subscriptionList.appendChild(empty);
+        return;
+      }
+      const nodes = nodeMap();
+      for (const subscription of state.subscriptions) {
+        const card = document.createElement("div");
+        card.className = "subscription-card";
+        const head = document.createElement("div");
+        head.className = "subscription-head";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.textContent = subscription.name;
+        const meta = document.createElement("div");
+        meta.className = "hint";
+        const names = (subscription.node_ids || [])
+          .map((id) => nodes.get(id))
+          .filter(Boolean)
+          .map((node) => node.name);
+        meta.textContent = formatLabel(subscription.format) + " · " +
+          (subscription.include_all ? "全部节点" : (names.length + " 个节点" + (names.length ? "：" + names.join("、") : "")));
+        titleWrap.appendChild(title);
+        titleWrap.appendChild(meta);
+        head.appendChild(titleWrap);
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        actions.style.marginTop = "0";
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "small";
+        edit.textContent = "编辑";
+        edit.addEventListener("click", () => editSubscription(subscription.id));
+        const rotate = document.createElement("button");
+        rotate.type = "button";
+        rotate.className = "small";
+        rotate.textContent = "轮换令牌";
+        rotate.addEventListener("click", async () => {
+          if (!confirm("轮换“" + subscription.name + "”的令牌？旧长短链会立即失效。")) return;
+          try {
+            await api("/api/proxy-traffic/sub/subscriptions/rotate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: subscription.id }),
+            });
+            await loadState();
+            setStatus("令牌已轮换，请重新复制链接给用户。", "ok");
+          } catch (error) {
+            setStatus("轮换失败：" + error.message, "error");
+          }
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "small danger";
+        remove.textContent = "删除";
+        remove.addEventListener("click", async () => {
+          if (!confirm("删除订阅“" + subscription.name + "”？节点本身不会删除。")) return;
+          try {
+            await api("/api/proxy-traffic/sub/subscriptions/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: subscription.id }),
+            });
+            if (editingId === subscription.id) resetEditor();
+            await loadState();
+            setStatus("订阅已删除。", "ok");
+          } catch (error) {
+            setStatus("删除订阅失败：" + error.message, "error");
+          }
+        });
+        actions.append(edit, rotate, remove);
+        head.appendChild(actions);
+        card.appendChild(head);
+        card.appendChild(makeLinkRow("长链", subscriptionLink(subscription, false)));
+        card.appendChild(makeLinkRow("短链", subscriptionLink(subscription, true)));
+        el.subscriptionList.appendChild(card);
+      }
+    }
+
+    function resetEditor() {
+      editingId = "";
+      el.editorTitle.textContent = "创建订阅";
+      el.name.value = "";
+      el.format.value = "auto";
+      el.baseUrl.value = state.default_base_url || defaultBase();
+      el.includeAll.checked = false;
+      el.save.textContent = "创建订阅";
+      el.cancelEdit.hidden = true;
+      document.querySelectorAll("input[data-node-id]").forEach((input) => { input.checked = false; });
+      updateSelectedCount();
+    }
+
+    function editSubscription(subscriptionId) {
+      const subscription = state.subscriptions.find((item) => item.id === subscriptionId);
+      if (!subscription) return;
+      editingId = subscription.id;
+      el.editorTitle.textContent = "编辑订阅";
+      el.name.value = subscription.name;
+      el.format.value = subscription.format;
+      el.baseUrl.value = subscription.base_url || state.default_base_url || defaultBase();
+      el.includeAll.checked = !!subscription.include_all;
+      el.save.textContent = "保存修改";
+      el.cancelEdit.hidden = false;
+      const ids = new Set(subscription.node_ids || []);
+      document.querySelectorAll("input[data-node-id]").forEach((input) => {
+        input.checked = ids.has(input.getAttribute("data-node-id"));
+      });
+      updateSelectedCount();
+      el.name.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    async function loadState() {
+      const payload = await api("/api/proxy-traffic/sub/state");
+      state = {
+        nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+        subscriptions: Array.isArray(payload.subscriptions) ? payload.subscriptions : [],
+        default_base_url: payload.default_base_url || "",
+      };
+      if (!el.baseUrl.value) el.baseUrl.value = state.default_base_url || defaultBase();
+      renderNodes();
+      renderSubscriptions();
+    }
+
+    el.komariBase.addEventListener("click", () => {
+      el.baseUrl.value = defaultBase();
+      renderSubscriptions();
+      setStatus("已切换为 Komari 域名基址。");
+    });
+    el.selectAll.addEventListener("click", () => {
+      document.querySelectorAll("input[data-node-id]").forEach((input) => { input.checked = true; });
+      updateSelectedCount();
+    });
+    el.includeAll.addEventListener("change", updateSelectedCount);
+    el.clearSelection.addEventListener("click", () => {
+      document.querySelectorAll("input[data-node-id]").forEach((input) => { input.checked = false; });
+      updateSelectedCount();
+    });
+    el.refresh.addEventListener("click", async () => {
+      try {
+        await loadState();
+        setStatus("已刷新。", "ok");
+      } catch (error) {
+        setStatus("刷新失败：" + error.message, "error");
+      }
+    });
+    el.clearImport.addEventListener("click", () => { el.importLinks.value = ""; });
+    el.importButton.addEventListener("click", async () => {
+      const links = el.importLinks.value.trim();
+      if (!links) {
+        setStatus("请先粘贴分享链接。", "error");
+        return;
+      }
+      el.importButton.disabled = true;
+      setStatus("正在导入…");
+      try {
+        const payload = await api("/api/proxy-traffic/sub/nodes/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ links }),
+        });
+        el.importLinks.value = "";
+        await loadState();
+        if (payload.errors && payload.errors.length) {
+          const first = payload.errors.slice(0, 3)
+            .map((item) => "第 " + item.line + " 行：" + item.error)
+            .join("；");
+          setStatus("导入 " + payload.imported + " 个节点，失败 " + payload.errors.length + " 个。" + first, "error");
+        } else {
+          setStatus("已导入 " + payload.imported + " 个节点。", "ok");
+        }
+      } catch (error) {
+        setStatus("导入失败：" + error.message, "error");
+      } finally {
+        el.importButton.disabled = false;
+      }
+    });
+    el.save.addEventListener("click", async () => {
+      const name = el.name.value.trim();
+      const nodeIds = selectedIds();
+      if (!name) {
+        setStatus("订阅名称不能为空。", "error");
+        return;
+      }
+      if (!nodeIds.length && !el.includeAll.checked) {
+        setStatus("请至少勾选一个节点。", "error");
+        return;
+      }
+      const baseUrl = el.baseUrl.value.trim();
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        setStatus("订阅基址必须是 http:// 或 https:// 开头。", "error");
+        return;
+      }
+      el.save.disabled = true;
+      setStatus(editingId ? "正在保存修改…" : "正在创建订阅…");
+      try {
+        await api("/api/proxy-traffic/sub/subscriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingId || undefined,
+            name,
+            node_ids: nodeIds,
+            base_url: baseUrl,
+            format: el.format.value,
+            include_all: el.includeAll.checked,
+          }),
+        });
+        const wasEditing = !!editingId;
+        resetEditor();
+        await loadState();
+        setStatus(wasEditing ? "订阅已保存。" : "订阅已创建，长链和短链已经可以复制。", "ok");
+      } catch (error) {
+        setStatus("保存失败：" + error.message, "error");
+      } finally {
+        el.save.disabled = false;
+      }
+    });
+    el.cancelEdit.addEventListener("click", resetEditor);
+    el.baseUrl.addEventListener("input", renderSubscriptions);
+
+    resetEditor();
+    loadState().catch((error) => setStatus("读取订阅状态失败：" + error.message, "error"));
+  </script>
+</body>
+</html>

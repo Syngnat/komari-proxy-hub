@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分流规则</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f7;
+      --panel: #fff;
+      --text: #16202b;
+      --muted: #687786;
+      --line: rgba(20, 35, 50, .12);
+      --accent: #2867e8;
+      --danger: #c03b46;
+      --ok: #138a72;
+      --soft: rgba(40, 103, 232, .08);
+      --radius: 16px;
+      --key: #7a3db8;
+      --str: #0a7a5a;
+      --num: #b35c00;
+      --comment: #8b98a6;
+      --anchor: #9a5b00;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10161d; --panel: #182029; --text: #edf3f8; --muted: #93a0ad;
+        --line: rgba(235, 243, 250, .14); --accent: #79a7ff; --danger: #ff8c95;
+        --ok: #48c9ae; --soft: rgba(121, 167, 255, .1);
+        --key: #c49cff; --str: #78d8bd; --num: #ffc27d;
+        --comment: #7f8d9c; --anchor: #ffd27d;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px; color: var(--text); background: var(--bg);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.5;
+    }
+    .shell { max-width: 1320px; margin: 0 auto; }
+    h1 { margin: 8px 0 6px; font-size: 30px; letter-spacing: -.03em; }
+    h2 { margin: 0; font-size: 18px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+    .panel {
+      margin-bottom: 18px; padding: 20px; border: 1px solid var(--line);
+      border-radius: var(--radius); background: var(--panel);
+      box-shadow: 0 14px 42px rgba(20, 35, 50, .06);
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .panel-head + .panel-head { margin-top: 18px; }
+    .workspace { display: grid; grid-template-columns: 285px minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+    .file-list { display: flex; flex-direction: column; gap: 9px; }
+    .file-card {
+      display: block; width: 100%; text-align: left; padding: 12px;
+      border: 1px solid var(--line); border-radius: 12px; background: transparent;
+      color: var(--text); cursor: pointer;
+    }
+    .file-card:hover, .file-card.active { border-color: var(--accent); background: var(--soft); }
+    .file-card-title { font-weight: 700; font-size: 14px; }
+    .file-card-sub { margin-top: 4px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .file-card-meta { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+    .editor-area { min-width: 0; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    label { color: var(--muted); font-size: 12px; }
+    input, select, textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+      background: transparent; color: var(--text); font: inherit;
+    }
+    input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+    button {
+      border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px;
+      background: transparent; color: var(--text); cursor: pointer; font: inherit;
+    }
+    button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    button.danger { color: var(--danger); }
+    button.small { padding: 4px 8px; font-size: 12px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .badge {
+      display: inline-block; padding: 1px 7px; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
+    }
+    .badge.accent { color: var(--accent); border-color: rgba(40, 103, 232, .35); }
+    .badge.ok { color: var(--ok); border-color: rgba(19, 138, 114, .35); }
+    .badge.bad { color: var(--danger); border-color: rgba(192, 59, 70, .35); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
+    .status { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--ok); }
+    .path { color: var(--muted); font: 11px/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
+    .tabs { display: flex; gap: 6px; margin-top: 16px; border-bottom: 1px solid var(--line); }
+    .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px; color: var(--muted); }
+    .tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+    .rule-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .rule-form { display: grid; grid-template-columns: 150px minmax(160px, 1fr) minmax(160px, 1fr) 150px auto; gap: 8px; align-items: end; margin-top: 10px; }
+    .rule-form .field { gap: 4px; }
+    .rule-table-wrap { margin-top: 12px; max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-size: 12px; }
+    th { position: sticky; top: 0; z-index: 1; background: var(--panel); color: var(--muted); font-size: 11px; }
+    tr:last-child td { border-bottom: 0; }
+    .rule-text { overflow-wrap: anywhere; }
+    .rule-actions { white-space: nowrap; }
+    .rule-actions button { padding: 2px 5px; margin: 0 2px 2px 0; }
+    .empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+    .yaml-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .yaml-wrap {
+      position: relative; height: 600px; margin-top: 10px; border: 1px solid var(--line);
+      border-radius: 10px; overflow: hidden; background: rgba(127, 127, 127, .045);
+    }
+    .yaml-highlight, .yaml-editor {
+      position: absolute; inset: 0; margin: 0; padding: 14px;
+      border: 0; white-space: pre; tab-size: 2;
+      font: 12px/1.55 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      overflow: auto; letter-spacing: 0;
+    }
+    .yaml-highlight { z-index: 1; pointer-events: none; color: var(--text); }
+    .yaml-editor {
+      z-index: 2; resize: none; color: transparent; caret-color: var(--text);
+      -webkit-text-fill-color: transparent; background: transparent;
+      outline: none; overflow: auto;
+    }
+    .yaml-editor::selection { background: rgba(40, 103, 232, .25); }
+    .yk { color: var(--key); }
+    .ys { color: var(--str); }
+    .yn { color: var(--num); }
+    .yc { color: var(--comment); }
+    .ya { color: var(--anchor); }
+    .yd { color: var(--accent); }
+    .result { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; font: 11px/1.5 "Cascadia Code", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    @media (max-width: 950px) {
+      body { padding: 14px; }
+      .workspace, .grid { grid-template-columns: 1fr; }
+      .rule-form { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="eyebrow">PROXY TRAFFIC · RULE STUDIO</div>
+    <h1>分流规则</h1>
+    <p class="subtitle">自动识别订阅规则文件，按规则表可视化修改，也可以直接编辑 YAML。保存前会校验 YAML，并自动备份原文件。</p>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>订阅规则文件</h2>
+          <div class="hint">当前识别目录：<code id="rootPath">—</code></div>
+        </div>
+        <button id="refreshRules" type="button">重新识别</button>
+      </div>
+      <div id="ruleStatus" class="status"></div>
+      <div class="workspace">
+        <aside id="fileList" class="file-list"></aside>
+        <div id="editorArea" class="editor-area" hidden>
+          <div class="panel-head">
+            <div>
+              <h2 id="currentTitle">—</h2>
+              <div id="currentMeta" class="hint">—</div>
+            </div>
+            <button id="copyUrl" type="button">复制订阅链接</button>
+          </div>
+          <div class="grid">
+            <div class="field">
+              <label for="clientSelect">执行节点（规则文件所在 VPS）</label>
+              <select id="clientSelect"></select>
+              <div class="hint">BeroHost 的规则文件请选 Bero-DE-6H16；页面会优先自动选择。</div>
+            </div>
+            <div class="field">
+              <label>文件路径</label>
+              <div id="filePath" class="path">—</div>
+            </div>
+            <div class="field full">
+              <label>订阅链接</label>
+              <div id="subscriptionUrl" class="path">—</div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button id="tabVisual" class="tab active" type="button">可视规则</button>
+            <button id="tabRaw" class="tab" type="button">YAML 源码</button>
+          </div>
+
+          <div id="visualPane">
+            <div class="rule-toolbar">
+              <div class="hint" id="ruleSummary">—</div>
+              <button id="refreshFile" class="small" type="button">重新读取文件</button>
+            </div>
+            <div class="rule-form" id="ruleForm">
+              <div class="field">
+                <label for="ruleType">类型</label>
+                <select id="ruleType"></select>
+              </div>
+              <div class="field">
+                <label for="ruleValue">匹配内容</label>
+                <input id="ruleValue" placeholder="example.com / acl_openai / CN">
+              </div>
+              <div class="field">
+                <label for="ruleTarget">目标</label>
+                <select id="ruleTarget"></select>
+              </div>
+              <div class="field">
+                <label for="ruleOptions">选项</label>
+                <input id="ruleOptions" placeholder="no-resolve">
+              </div>
+              <div class="actions" style="margin:0">
+                <button id="applyRule" class="primary" type="button">添加规则</button>
+                <button id="cancelRule" type="button" hidden>取消</button>
+              </div>
+            </div>
+            <div class="rule-table-wrap">
+              <table>
+                <thead>
+                  <tr><th>#</th><th>类型</th><th>匹配内容</th><th>目标</th><th>选项</th><th>操作</th></tr>
+                </thead>
+                <tbody id="ruleRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="rawPane" hidden>
+            <div class="yaml-toolbar">
+              <div class="hint">直接编辑 YAML；可点“解析 YAML”把规则刷新到可视表格。</div>
+              <div class="actions" style="margin:0">
+                <button id="parseRaw" type="button">解析 YAML 并刷新</button>
+              </div>
+            </div>
+            <div class="yaml-wrap">
+              <pre id="yamlHighlight" class="yaml-highlight" aria-hidden="true"></pre>
+              <textarea id="yamlEditor" class="yaml-editor" spellcheck="false" aria-label="YAML 源码"></textarea>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="saveRules" class="primary" type="button">保存到订阅文件</button>
+            <button id="reloadFile" type="button">放弃修改</button>
+          </div>
+          <div id="editorStatus" class="status"></div>
+          <div id="editorResult" class="result" hidden></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const el = Object.fromEntries([
+      "rootPath", "refreshRules", "ruleStatus", "fileList", "editorArea",
+      "currentTitle", "currentMeta", "copyUrl", "clientSelect", "filePath",
+      "subscriptionUrl",
+      "tabVisual", "tabRaw", "visualPane", "rawPane", "ruleSummary",
+      "refreshFile", "ruleForm", "ruleType", "ruleValue", "ruleTarget",
+      "ruleOptions", "applyRule", "cancelRule", "ruleRows", "parseRaw",
+      "yamlEditor", "yamlHighlight", "saveRules", "reloadFile",
+      "editorStatus", "editorResult",
+    ].map((id) => [id, document.getElementById(id)]));
+
+    const specialTargets = ["DIRECT", "REJECT", "REJECT-DROP", "PASS"];
+    const ruleTypes = [
+      "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6",
+      "GEOIP", "GEOSITE", "RULE-SET", "IP-ASN", "SRC-IP-CIDR",
+      "SRC-PORT", "DST-PORT", "PROCESS-NAME", "PROCESS-PATH",
+      "URL-REGEX", "DOMAIN-REGEX", "NETWORK", "MATCH", "FINAL",
+    ];
+
+    let state = { files: [], root: "", public_base: "" };
+    let clients = [];
+    let currentFile = null;
+    let content = "";
+    let rules = [];
+    let groups = [];
+    let providers = [];
+    let editingIndex = -1;
+    let rawDirty = false;
+    let activeTab = "visual";
+
+    function setStatus(message, kind, target) {
+      const node = target || el.ruleStatus;
+      node.textContent = message || "";
+      node.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function b64(text) {
+      const bytes = new TextEncoder().encode(text);
+      let binary = "";
+      bytes.forEach((value) => { binary += String.fromCharCode(value); });
+      return btoa(binary);
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, {
+        cache: "no-store",
+        ...(options || {}),
+        headers: {
+          Accept: "application/json",
+          ...(options && options.headers ? options.headers : {}),
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "请求失败");
+      return payload;
+    }
+
+    function formatBytes(value) {
+      const amount = Number(value || 0);
+      if (amount < 1024) return amount + " B";
+      if (amount < 1024 * 1024) return (amount / 1024).toFixed(1) + " KiB";
+      return (amount / 1024 / 1024).toFixed(2) + " MiB";
+    }
+
+    function formatTime(value) {
+      if (!value) return "—";
+      try { return new Date(value).toLocaleString(); } catch (_) { return "—"; }
+    }
+
+    function preferredClient() {
+      return clients.find((client) =>
+        /bero/i.test(client.name || "") ||
+        /^94\.103\.173\.47$/.test(client.ipv4 || "")
+      ) || clients[0] || null;
+    }
+
+    function renderClients() {
+      el.clientSelect.replaceChildren();
+      clients.forEach((client) => {
+        const option = document.createElement("option");
+        option.value = client.uuid;
+        option.textContent = client.name + (client.ipv4 ? " · " + client.ipv4 : "");
+        el.clientSelect.appendChild(option);
+      });
+      const preferred = preferredClient();
+      if (preferred) el.clientSelect.value = preferred.uuid;
+    }
+
+    function renderFileList() {
+      el.fileList.replaceChildren();
+      if (!state.files.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "没有识别到规则文件";
+        el.fileList.appendChild(empty);
+        return;
+      }
+      state.files.forEach((file) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "file-card" + (currentFile && currentFile.id === file.id ? " active" : "");
+        button.addEventListener("click", () => openFile(file.id));
+        const title = document.createElement("div");
+        title.className = "file-card-title";
+        title.textContent = file.label;
+        const sub = document.createElement("div");
+        sub.className = "file-card-sub";
+        sub.textContent = file.path;
+        const meta = document.createElement("div");
+        meta.className = "file-card-meta";
+        const counts = document.createElement("span");
+        counts.className = "badge";
+        counts.textContent = (file.rule_count || 0) + " 条规则";
+        const nodes = document.createElement("span");
+        nodes.className = "badge";
+        nodes.textContent = (file.proxy_count || 0) + " 个节点";
+        const size = document.createElement("span");
+        size.className = "badge";
+        size.textContent = formatBytes(file.size);
+        meta.append(counts, nodes, size);
+        if (file.yaml_error) {
+          const error = document.createElement("span");
+          error.className = "badge bad";
+          error.textContent = "YAML 错误";
+          meta.appendChild(error);
+        }
+        button.append(title, sub, meta);
+        el.fileList.appendChild(button);
+      });
+    }
+
+    function updateSummary() {
+      const file = currentFile || {};
+      el.currentTitle.textContent = file.label || "规则文件";
+      el.currentMeta.textContent = [
+        formatBytes(file.size),
+        "更新 " + formatTime(file.mtime_ms),
+        (file.proxy_count || 0) + " 个节点",
+        (file.group_count || 0) + " 个策略组",
+        (file.provider_count || 0) + " 个规则提供者",
+      ].join(" · ");
+      el.filePath.textContent = file.path || "—";
+      el.subscriptionUrl.textContent = file.url || "—";
+      el.ruleSummary.textContent =
+        (rules.length || 0) + " 条规则 · " +
+        (groups.length || 0) + " 个策略组 · " +
+        (providers.length || 0) + " 个规则提供者";
+    }
+
+    function highlightValue(value) {
+      if (!value) return "";
+      const match = value.match(/^(\s*)(.*?)(\s*)$/);
+      const prefix = escapeHtml(match[1]);
+      const core = match[2];
+      const suffix = escapeHtml(match[3]);
+      if (!core) return prefix + suffix;
+      if (/^["'].*["']$/.test(core)) return prefix + '<span class="ys">' + escapeHtml(core) + "</span>" + suffix;
+      if (/^[&*]/.test(core)) return prefix + '<span class="ya">' + escapeHtml(core) + "</span>" + suffix;
+      if (/^(true|false|null|~)$/i.test(core)) return prefix + '<span class="yn">' + escapeHtml(core) + "</span>" + suffix;
+      if (/^-?\d+(?:\.\d+)?$/.test(core)) return prefix + '<span class="yn">' + escapeHtml(core) + "</span>" + suffix;
+      return prefix + '<span class="ys">' + escapeHtml(core) + "</span>" + suffix;
+    }
+
+    function splitYamlComment(value) {
+      let quote = null;
+      for (let index = 0; index < value.length; index += 1) {
+        const char = value[index];
+        if ((char === '"' || char === "'") && value[index - 1] !== "\\") {
+          quote = quote === char ? null : (quote || char);
+        }
+        if (char === "#" && !quote && (index === 0 || /\s/.test(value[index - 1]))) {
+          return [value.slice(0, index), value.slice(index)];
+        }
+      }
+      return [value, ""];
+    }
+
+    function highlightYaml(text) {
+      return String(text || "").split("\n").map((line) => {
+        if (/^\s*#/.test(line)) return '<span class="yc">' + escapeHtml(line) + "</span>";
+        const indent = line.match(/^\s*/)[0];
+        let rest = line.slice(indent.length);
+        let result = escapeHtml(indent);
+        if (rest.startsWith("- ")) {
+          result += '<span class="yd">- </span>';
+          rest = rest.slice(2);
+        }
+        const pair = rest.match(/^([^:\n]+):(\s*)(.*)$/);
+        if (pair) {
+          result += '<span class="yk">' + escapeHtml(pair[1]) + "</span>:" + escapeHtml(pair[2]);
+          rest = pair[3];
+        }
+        const split = splitYamlComment(rest);
+        result += highlightValue(split[0]);
+        if (split[1]) result += '<span class="yc">' + escapeHtml(split[1]) + "</span>";
+        return result;
+      }).join("\n");
+    }
+
+    function refreshHighlight() {
+      el.yamlHighlight.innerHTML = highlightYaml(el.yamlEditor.value);
+      el.yamlHighlight.scrollTop = el.yamlEditor.scrollTop;
+      el.yamlHighlight.scrollLeft = el.yamlEditor.scrollLeft;
+    }
+
+    function targetOptions(selected) {
+      const names = [...new Set([...groups, ...specialTargets])];
+      if (selected && !names.includes(selected)) names.push(selected);
+      return names;
+    }
+
+    function renderTargetSelect(selected) {
+      el.ruleTarget.replaceChildren();
+      targetOptions(selected).forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        el.ruleTarget.appendChild(option);
+      });
+      if (selected) el.ruleTarget.value = selected;
+    }
+
+    function parseRule(rule) {
+      const parts = String(rule).split(",");
+      const type = (parts[0] || "").trim().toUpperCase();
+      if (type === "MATCH" || type === "FINAL") {
+        return {
+          type,
+          value: "",
+          target: (parts[1] || "").trim(),
+          options: parts.slice(2).map((item) => item.trim()).filter(Boolean),
+        };
+      }
+      return {
+        type,
+        value: (parts[1] || "").trim(),
+        target: (parts[2] || "").trim(),
+        options: parts.slice(3).map((item) => item.trim()).filter(Boolean),
+      };
+    }
+
+    function buildRule(parts) {
+      if (parts.type === "MATCH" || parts.type === "FINAL") {
+        return [parts.type, parts.target, ...parts.options].filter(Boolean).join(",");
+      }
+      return [parts.type, parts.value, parts.target, ...parts.options].filter(Boolean).join(",");
+    }
+
+    function renderRules() {
+      el.ruleRows.replaceChildren();
+      rules.forEach((rule, index) => {
+        const parts = parseRule(rule);
+        const row = document.createElement("tr");
+        const number = document.createElement("td");
+        number.textContent = String(index + 1);
+        const type = document.createElement("td");
+        type.innerHTML = '<span class="badge accent">' + escapeHtml(parts.type) + "</span>";
+        const value = document.createElement("td");
+        value.className = "rule-text";
+        value.textContent = parts.value || "—";
+        const target = document.createElement("td");
+        target.textContent = parts.target || "—";
+        const options = document.createElement("td");
+        options.textContent = parts.options.join(", ") || "—";
+        const action = document.createElement("td");
+        action.className = "rule-actions";
+        const up = document.createElement("button");
+        up.type = "button"; up.className = "small"; up.textContent = "↑";
+        up.disabled = index === 0;
+        up.addEventListener("click", () => moveRule(index, -1));
+        const down = document.createElement("button");
+        down.type = "button"; down.className = "small"; down.textContent = "↓";
+        down.disabled = index === rules.length - 1;
+        down.addEventListener("click", () => moveRule(index, 1));
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.className = "small"; edit.textContent = "编辑";
+        edit.addEventListener("click", () => editRule(index));
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.className = "small danger"; remove.textContent = "删除";
+        remove.addEventListener("click", () => deleteRule(index));
+        action.append(up, down, edit, remove);
+        row.append(number, type, value, target, options, action);
+        el.ruleRows.appendChild(row);
+      });
+      updateSummary();
+    }
+
+    function replaceRulesBlock(text, nextRules) {
+      const eol = text.includes("\r\n") ? "\r\n" : "\n";
+      const lines = text.split(/\r?\n/);
+      let start = -1;
+      for (let index = 0; index < lines.length; index += 1) {
+        if (/^rules:\s*(?:#.*)?$/.test(lines[index])) {
+          start = index;
+          break;
+        }
+      }
+      const block = ["rules:", ...nextRules.map((rule) => "- " + JSON.stringify(rule))];
+      if (start === -1) {
+        const suffix = lines.length && lines[lines.length - 1] === "" ? [] : [""];
+        return lines.concat(suffix, block).join(eol);
+      }
+      let end = lines.length;
+      for (let index = start + 1; index < lines.length; index += 1) {
+        if (/^[A-Za-z0-9_.-]+:\s*(?:#.*)?$/.test(lines[index])) {
+          end = index;
+          break;
+        }
+        if (/^---\s*$/.test(lines[index])) {
+          end = index;
+          break;
+        }
+      }
+      lines.splice(start, end - start, ...block);
+      return lines.join(eol);
+    }
+
+    function syncRawFromRules() {
+      content = replaceRulesBlock(content, rules);
+      el.yamlEditor.value = content;
+      rawDirty = false;
+      refreshHighlight();
+    }
+
+    function isFinalRule(rule) {
+      return /^(MATCH|FINAL),/.test(String(rule || "").trim());
+    }
+
+    function moveRule(index, delta) {
+      const next = index + delta;
+      if (next < 0 || next >= rules.length) return;
+      if (isFinalRule(rules[index]) || isFinalRule(rules[next])) return;
+      [rules[index], rules[next]] = [rules[next], rules[index]];
+      syncRawFromRules();
+      renderRules();
+    }
+
+    function deleteRule(index) {
+      if (!confirm("删除第 " + (index + 1) + " 条规则？")) return;
+      rules.splice(index, 1);
+      syncRawFromRules();
+      renderRules();
+    }
+
+    function editRule(index) {
+      editingIndex = index;
+      const parts = parseRule(rules[index]);
+      if (!Array.from(el.ruleType.options).some((option) => option.value === parts.type)) {
+        const option = document.createElement("option");
+        option.value = parts.type;
+        option.textContent = parts.type;
+        el.ruleType.appendChild(option);
+      }
+      el.ruleType.value = parts.type;
+      el.ruleValue.value = parts.value;
+      el.ruleOptions.value = parts.options.join(",");
+      renderTargetSelect(parts.target);
+      el.applyRule.textContent = "保存修改";
+      el.cancelRule.hidden = false;
+      el.ruleValue.disabled = parts.type === "MATCH" || parts.type === "FINAL";
+      el.ruleType.focus();
+    }
+
+    function resetRuleForm() {
+      editingIndex = -1;
+      el.ruleType.value = ruleTypes[0];
+      el.ruleValue.value = "";
+      el.ruleOptions.value = "";
+      renderTargetSelect(groups[0] || "DIRECT");
+      el.applyRule.textContent = "添加规则";
+      el.cancelRule.hidden = true;
+      el.ruleValue.disabled = false;
+    }
+
+    function submitRule() {
+      const type = el.ruleType.value;
+      const value = el.ruleValue.value.trim();
+      const target = el.ruleTarget.value;
+      const options = el.ruleOptions.value.split(",").map((item) => item.trim()).filter(Boolean);
+      if (!target) {
+        setStatus("目标策略组不能为空。", "error", el.editorStatus);
+        return;
+      }
+      if (type !== "MATCH" && type !== "FINAL" && !value) {
+        setStatus("匹配内容不能为空。", "error", el.editorStatus);
+        return;
+      }
+      const rule = buildRule({ type, value, target, options });
+      const finalRule = type === "MATCH" || type === "FINAL";
+      if (finalRule) {
+        rules = rules.filter((item) => !isFinalRule(item));
+        rules.push(rule);
+      } else if (editingIndex >= 0) {
+        rules[editingIndex] = rule;
+      } else {
+        const matchIndex = rules.findIndex((item) => /^(MATCH|FINAL),/.test(item));
+        if (matchIndex >= 0) rules.splice(matchIndex, 0, rule);
+        else rules.push(rule);
+      }
+      syncRawFromRules();
+      renderRules();
+      resetRuleForm();
+      setStatus("规则已加入，尚未保存。", "ok", el.editorStatus);
+    }
+
+    async function switchTab(tab) {
+      if (tab === "visual" && rawDirty) {
+        try {
+          await parseRaw();
+        } catch (error) {
+          setStatus(error.message, "error", el.editorStatus);
+          return;
+        }
+      }
+      activeTab = tab;
+      el.tabVisual.classList.toggle("active", tab === "visual");
+      el.tabRaw.classList.toggle("active", tab === "raw");
+      el.visualPane.hidden = tab !== "visual";
+      el.rawPane.hidden = tab !== "raw";
+      if (tab === "raw") refreshHighlight();
+    }
+
+    async function parseRaw() {
+      setStatus("正在校验 YAML…", "", el.editorStatus);
+      const payload = await api("/api/proxy-traffic/rules/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: el.yamlEditor.value }),
+      });
+      content = el.yamlEditor.value;
+      rules = Array.isArray(payload.rules) ? payload.rules : [];
+      groups = Array.isArray(payload.groups) ? payload.groups : [];
+      providers = Array.isArray(payload.providers) ? payload.providers : [];
+      rawDirty = false;
+      renderRules();
+      resetRuleForm();
+      setStatus("YAML 校验通过，已刷新 " + rules.length + " 条规则。", "ok", el.editorStatus);
+    }
+
+    function renderRuleTypeSelect() {
+      el.ruleType.replaceChildren();
+      ruleTypes.forEach((type) => {
+        const option = document.createElement("option");
+        option.value = type;
+        option.textContent = type;
+        el.ruleType.appendChild(option);
+      });
+    }
+
+    async function openFile(fileId) {
+      setStatus("正在读取规则文件…");
+      try {
+        const payload = await api(
+          "/api/proxy-traffic/rules/file?file_id=" + encodeURIComponent(fileId)
+        );
+        currentFile = payload.file;
+        const fileIndex = state.files.findIndex((item) => item.id === fileId);
+        if (fileIndex >= 0) {
+          state.files[fileIndex] = currentFile;
+        }
+        content = payload.content || "";
+        rules = Array.isArray(payload.rules) ? payload.rules : [];
+        groups = Array.isArray(payload.groups) ? payload.groups : [];
+        providers = Array.isArray(payload.providers) ? payload.providers : [];
+        rawDirty = false;
+        el.editorArea.hidden = false;
+        el.yamlEditor.value = content;
+        refreshHighlight();
+        renderRules();
+        renderRuleTypeSelect();
+        renderTargetSelect(groups[0] || "DIRECT");
+        resetRuleForm();
+        updateSummary();
+        renderFileList();
+        el.editorResult.hidden = true;
+        if (payload.yaml_error) {
+          await switchTab("raw");
+          setStatus("YAML 解析失败，已切到源码模式：" + payload.yaml_error, "error", el.editorStatus);
+        } else {
+          await switchTab("visual");
+          setStatus("已读取 " + currentFile.label + "，共 " + rules.length + " 条规则。", "ok");
+        }
+        return payload;
+      } catch (error) {
+        setStatus("读取规则文件失败：" + error.message, "error");
+        return null;
+      }
+    }
+
+    async function loadState() {
+      setStatus("正在识别规则文件…");
+      try {
+        const payload = await api("/api/proxy-traffic/rules");
+        state = {
+          files: Array.isArray(payload.files) ? payload.files : [],
+          root: payload.root || "",
+          public_base: payload.public_base || "",
+        };
+        el.rootPath.textContent = state.root || "—";
+        renderFileList();
+        if (state.files.length) {
+          const opened = await openFile(state.files[0].id);
+          if (opened && !opened.yaml_error) {
+            setStatus("已识别 " + state.files.length + " 个规则文件。", "ok");
+          }
+        } else {
+          setStatus(payload.error || "没有识别到 /var/www/premium/*/mihomo.yaml。", "error");
+        }
+      } catch (error) {
+        setStatus("识别失败：" + error.message, "error");
+      }
+    }
+
+    async function loadClients() {
+      try {
+        const payload = await api("/api/proxy-traffic/provision/clients");
+        clients = Array.isArray(payload.clients) ? payload.clients : [];
+        renderClients();
+      } catch (error) {
+        el.clientSelect.replaceChildren();
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "读取节点失败：" + error.message;
+        el.clientSelect.appendChild(option);
+      }
+    }
+
+    async function pollTask(taskId) {
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const response = await fetch(
+          "/api/proxy-traffic/provision/task?task_id=" + encodeURIComponent(taskId),
+          { cache: "no-store" },
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "读取任务失败");
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        if (!results.length) continue;
+        const finished = results.every((item) =>
+          item.finished_at || (item.exit_code !== null && item.exit_code !== undefined)
+        );
+        if (!finished) {
+          setStatus("正在写入规则文件…", "", el.editorStatus);
+          continue;
+        }
+        return results.map((item) => item.result || "").join("\n");
+      }
+      throw new Error("保存任务等待超时");
+    }
+
+    async function saveRules() {
+      if (!currentFile) return;
+      const client = el.clientSelect.value;
+      if (!client) {
+        setStatus("请选择执行节点。", "error", el.editorStatus);
+        return;
+      }
+      if (rawDirty) {
+        try { await parseRaw(); } catch (error) {
+          setStatus("YAML 校验失败，未保存：" + error.message, "error", el.editorStatus);
+          return;
+        }
+      }
+      if (!content || !content.trim()) {
+        setStatus("规则内容为空。", "error", el.editorStatus);
+        return;
+      }
+      if (!confirm("保存会先备份原文件，然后覆盖订阅规则。确认写入？")) return;
+      el.saveRules.disabled = true;
+      setStatus("正在提交保存任务…", "", el.editorStatus);
+      try {
+        const payload = await api("/api/proxy-traffic/rules/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_id: currentFile.id,
+            client,
+            content,
+            content_b64: b64(content),
+          }),
+        });
+        if (!payload.task_id) throw new Error("没有返回任务 ID");
+        const output = await pollTask(payload.task_id);
+        el.editorResult.hidden = false;
+        el.editorResult.textContent = output || "保存完成";
+        await openFile(currentFile.id);
+        setStatus("规则已保存，订阅文件已更新。", "ok", el.editorStatus);
+      } catch (error) {
+        setStatus("保存失败：" + error.message, "error", el.editorStatus);
+      } finally {
+        el.saveRules.disabled = false;
+      }
+    }
+
+    el.refreshRules.addEventListener("click", loadState);
+    el.refreshFile.addEventListener("click", () => {
+      if (currentFile) openFile(currentFile.id);
+    });
+    el.tabVisual.addEventListener("click", () => switchTab("visual"));
+    el.tabRaw.addEventListener("click", () => switchTab("raw"));
+    el.ruleType.addEventListener("change", () => {
+      el.ruleValue.disabled = el.ruleType.value === "MATCH" || el.ruleType.value === "FINAL";
+    });
+    el.applyRule.addEventListener("click", submitRule);
+    el.cancelRule.addEventListener("click", resetRuleForm);
+    el.parseRaw.addEventListener("click", async () => {
+      try { await parseRaw(); } catch (error) {
+        setStatus(error.message, "error", el.editorStatus);
+      }
+    });
+    el.yamlEditor.addEventListener("input", () => {
+      rawDirty = true;
+      content = el.yamlEditor.value;
+      refreshHighlight();
+    });
+    el.yamlEditor.addEventListener("scroll", () => {
+      el.yamlHighlight.scrollTop = el.yamlEditor.scrollTop;
+      el.yamlHighlight.scrollLeft = el.yamlEditor.scrollLeft;
+    });
+    el.copyUrl.addEventListener("click", async () => {
+      if (!currentFile || !currentFile.url) return;
+      try {
+        await navigator.clipboard.writeText(currentFile.url);
+        setStatus("订阅链接已复制。", "ok");
+      } catch (_) {
+        setStatus("复制失败，请手动复制：" + currentFile.url, "error");
+      }
+    });
+    el.reloadFile.addEventListener("click", () => {
+      if (currentFile) openFile(currentFile.id);
+    });
+    el.saveRules.addEventListener("click", saveRules);
+
+    renderRuleTypeSelect();
+    resetRuleForm();
+    Promise.all([loadClients(), loadState()]).catch((error) => {
+      setStatus("初始化失败：" + error.message, "error");
+    });
+  </script>
+</body>
+</html>
