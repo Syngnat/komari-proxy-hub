@@ -9,7 +9,8 @@
     "en": "Aggregates AnyTLS traffic by source IP with region, online state, inferred devices, target sites, top source IP, and per-IP domain details."
   },
   "author": "Syngnat",
-  "version": "1.4.1",
+  "version": "1.4.2",
+  "url": "https://github.com/Syngnat/komari-proxy-traffic",
   "komari": ">=1.6.0",
   "entry": "script.js",
   "permissions": {

@@ -4,7 +4,7 @@
 
 > 作者：Syngnat
 >
-> 当前版本：1.4.1
+> 当前版本：1.4.2
 
 ## 功能
 
@@ -156,7 +156,21 @@ sudo journalctl -u proxy-traffic-collector -f
 
 `node_id` 是稳定且唯一的节点标识，发布后不要随意修改，否则历史数据会归到新节点。`node_name` 是页面显示名称。
 
-### 4. 安装 Komari 插件
+### 4. 从 GitHub 插件市场安装
+
+在 Komari 管理后台的插件市场中添加自定义源：
+
+```text
+https://raw.githubusercontent.com/Syngnat/komari-proxy-traffic/main/v1.json
+```
+
+刷新市场目录后选择“代理流量排行”，点击安装。Komari 会从本仓库的 GitHub Release 下载 ZIP，校验 SHA-256 后解压到插件目录。
+
+市场清单文件为 [`v1.json`](v1.json)，安装包为对应版本的 Release 资源。
+
+本地文件复制只用于开发调试，不建议作为生产安装方式。
+
+#### 开发调试安装
 
 把 `plugin/` 下的内容复制到 Komari 数据目录：
 
