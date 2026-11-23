@@ -252,12 +252,12 @@ Xray 节点使用 access log 模式，不需要 Clash API。先确保 Xray 开�
 在 Komari 管理后台的插件市场中添加自定义源：
 
 ```text
-https://cdn.jsdelivr.net/gh/Syngnat/komari-proxy-traffic@main/v1.json
+https://fastly.jsdelivr.net/gh/Syngnat/komari-proxy-traffic@main/v1.json
 ```
 
 刷新市场目录后选择“代理流量排行”，点击安装。Komari 会从本仓库的 GitHub Release 下载 ZIP，校验 SHA-256 后解压到插件目录。
 
-使用 jsDelivr 而不是 `raw.githubusercontent.com` 的 `main` 地址，是为了避开 GitHub Raw 的 CDN 缓存，发布新版本后市场能更快读到清单。
+使用 jsDelivr 而不是 `raw.githubusercontent.com` 的 `main` 地址，是为了避开 GitHub Raw 的 CDN 缓存，发布新版本后市场能更快读到清单；Fastly 节点通常比默认 jsDelivr 节点刷新更快。
 
 市场清单文件为 [`v1.json`](v1.json)，安装包为对应版本的 Release 资源。
 
